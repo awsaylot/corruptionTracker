@@ -1,20 +1,4 @@
 services:
-  # frontend:
-  #   build:
-  #     context: ./frontend
-  #     dockerfile: Dockerfile
-  #   ports:
-  #     - "3000:3000"
-  #   environment:
-  #     - NEXT_PUBLIC_API_URL=http://clank:8080
-  #     - NODE_ENV=development
-  #   volumes:
-  #     - ./frontend:/app
-  #     - /app/node_modules
-  #   command: npm run dev
-  #   depends_on:
-  #     - clank
-
   clank:
     build:
       context: ./clank
@@ -28,6 +12,7 @@ services:
       - LLM_URL=http://llm:8090
     volumes:
       - sandbox_data:/sandbox
+      - ./clank/prompts:/app/prompts:rw   # <-- bind mount for live editing
     depends_on:
       - neo4j
       - llm

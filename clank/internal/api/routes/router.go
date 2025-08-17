@@ -28,6 +28,26 @@ func SetupRouter() *gin.Engine {
 	// Core endpoints
 	r.GET("/health", handlers.HealthHandler)
 
+	// Prompt endpoints (file-based prompts + hot-reload).
+	// These do not require the database middleware because they operate on the filesystem / prompt loader.
+	prompts := r.Group("/api/prompts")
+	{
+		// List all loaded prompts
+		prompts.GET("/", handlers.ListPrompts)
+
+		// Get details for a specific prompt by name
+		prompts.GET("/:name", handlers.GetPrompt)
+
+		// Render a prompt with provided arguments
+		prompts.POST("/:name/render", handlers.RenderPrompt)
+
+		// Validate arguments for a prompt without rendering
+		prompts.POST("/:name/validate", handlers.ValidatePrompt)
+
+		// Reload all prompts (hot-reload trigger)
+		prompts.POST("/reload", handlers.ReloadPrompts)
+	}
+
 	// WebSocket for real-time chat with llama.cpp
 	r.GET("/ws", handlers.WebSocketHandler(cfg))
 

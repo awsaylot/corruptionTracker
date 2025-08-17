@@ -6,9 +6,12 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"time"
 
 	"clank/config"
 	"clank/internal/llm"
+	"clank/internal/models"
+	"clank/internal/prompts"
 
 	"github.com/gin-gonic/gin"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -16,8 +19,9 @@ import (
 
 // MCPService handles MCP server functionality alongside llama.cpp
 type MCPService struct {
-	llmClient *llm.Client
-	server    *mcp.Server
+	llmClient    *llm.Client
+	server       *mcp.Server
+	promptLoader *prompts.PromptLoader
 }
 
 // MCPRequest represents an incoming MCP request
@@ -43,7 +47,13 @@ type MCPError struct {
 // NewMCPService creates a new MCP service integrated with llama.cpp
 func NewMCPService(cfg *config.Config) *MCPService {
 	service := &MCPService{
-		llmClient: llm.NewClient(cfg),
+		llmClient:    llm.NewClient(cfg),
+		promptLoader: prompts.NewPromptLoader("./prompts"), // adjust path to your prompts folder
+	}
+
+	// Load all prompts at startup
+	if err := service.promptLoader.LoadPrompts(); err != nil {
+		log.Printf("Error loading prompts: %v", err)
 	}
 
 	// Create MCP implementation for tool calling and context injection
@@ -52,46 +62,46 @@ func NewMCPService(cfg *config.Config) *MCPService {
 		Version: "v0.1.0",
 	}
 
-	// Initialize MCP server
-	service.server = mcp.NewServer(impl, &mcp.ServerOptions{
-		// Configure server options as needed
-	})
+	service.server = mcp.NewServer(impl, &mcp.ServerOptions{})
 
 	return service
 }
 
-// ProcessWithMCP processes a message through MCP before sending to llama.cpp
+// ProcessWithMCP processes messages through MCP, injecting system prompts
 func (s *MCPService) ProcessWithMCP(ctx context.Context, messages []llm.Message) ([]llm.Message, error) {
-	// This is where you can add MCP processing:
-	// 1. Tool calling
-	// 2. Context injection from graph database
-	// 3. Message preprocessing
-
 	log.Printf("Processing %d messages through MCP", len(messages))
 
-	// For now, just pass through the messages
-	// You can add MCP tool calling logic here later
-	processedMessages := make([]llm.Message, len(messages))
-	copy(processedMessages, messages)
+	var processed []llm.Message
 
-	// Example: Add system context from graph database
-	if len(processedMessages) > 0 {
-		// You could inject context here based on the conversation
-		// systemContext := s.getContextFromGraph(messages)
-		// if systemContext != "" {
-		//     processedMessages = append([]llm.Message{{
-		//         Role: "system",
-		//         Content: systemContext,
-		//     }}, processedMessages...)
-		// }
+	// Reload prompts if files have changed
+	if err := s.promptLoader.ReloadIfChanged(); err != nil {
+		log.Printf("Error reloading prompts: %v", err)
 	}
 
-	return processedMessages, nil
+	// Inject system prompt
+	systemContext := &models.PromptContext{
+		Arguments: map[string]any{},
+		Timestamp: time.Now(),
+	}
+	if sysPrompt, err := s.promptLoader.RenderPrompt("system", systemContext); err == nil {
+		processed = append(processed, llm.Message{
+			Role:    "system",
+			Content: sysPrompt.RenderedText,
+		})
+	} else {
+		log.Printf("Failed to render system prompt: %v", err)
+	}
+
+	// TODO: optionally add prompts for tools or context analysis here based on message content
+
+	// Append user messages
+	processed = append(processed, messages...)
+
+	return processed, nil
 }
 
 // GenerateWithMCP generates a response using llama.cpp with MCP preprocessing
 func (s *MCPService) GenerateWithMCP(ctx context.Context, messages []llm.Message, responseChan chan<- string) error {
-	// Process messages through MCP first
 	processedMessages, err := s.ProcessWithMCP(ctx, messages)
 	if err != nil {
 		return fmt.Errorf("MCP processing failed: %w", err)
@@ -106,7 +116,6 @@ func MCPHandlerSSE(c *gin.Context) {
 	cfg := config.LoadConfig()
 	mcpService := NewMCPService(cfg)
 
-	// Set SSE headers
 	c.Writer.Header().Set("Content-Type", "text/event-stream")
 	c.Writer.Header().Set("Cache-Control", "no-cache")
 	c.Writer.Header().Set("Connection", "keep-alive")
@@ -115,10 +124,8 @@ func MCPHandlerSSE(c *gin.Context) {
 
 	log.Printf("Starting MCP SSE connection")
 
-	// Create SSE transport for MCP
 	transport := mcp.NewSSEServerTransport("mcp-llm-proxy", c.Writer)
 
-	// Run the MCP server
 	ctx := c.Request.Context()
 	if err := mcpService.server.Run(ctx, transport); err != nil {
 		log.Printf("MCP server error: %v", err)
@@ -143,7 +150,6 @@ func MCPChatHandler(cfg *config.Config) gin.HandlerFunc {
 		}
 
 		if request.Stream {
-			// Handle streaming response
 			c.Writer.Header().Set("Content-Type", "text/event-stream")
 			c.Writer.Header().Set("Cache-Control", "no-cache")
 			c.Writer.Header().Set("Connection", "keep-alive")
@@ -158,7 +164,6 @@ func MCPChatHandler(cfg *config.Config) gin.HandlerFunc {
 				}
 			}()
 
-			// Stream responses back
 			for chunk := range responseChan {
 				if chunk != "" {
 					fmt.Fprintf(c.Writer, "data: %s\n\n", chunk)
@@ -166,8 +171,13 @@ func MCPChatHandler(cfg *config.Config) gin.HandlerFunc {
 				}
 			}
 		} else {
-			// Handle non-streaming response
-			result, err := mcpService.llmClient.Generate(c.Request.Context(), request.Messages)
+			processedMessages, err := mcpService.ProcessWithMCP(c.Request.Context(), request.Messages)
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+				return
+			}
+
+			result, err := mcpService.llmClient.Generate(c.Request.Context(), processedMessages)
 			if err != nil {
 				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 				return
