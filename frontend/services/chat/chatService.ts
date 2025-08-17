@@ -140,7 +140,7 @@ export class ChatService {
                     };
                     this.messageHandler?.(this.currentStreamingMessage);
                 } else {
-                    // Update existing streaming message
+                    // Update existing streaming message with accumulated content
                     this.currentStreamingMessage.content += response.content;
                     this.currentStreamingMessage.status = 'streaming';
                     this.messageHandler?.(this.currentStreamingMessage);

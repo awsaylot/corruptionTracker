@@ -4,6 +4,8 @@ import (
 	"context"
 	"log"
 	"net/http"
+	"strings"
+	"sync"
 	"time"
 
 	"clank/config"
@@ -14,9 +16,7 @@ import (
 )
 
 var upgrader = websocket.Upgrader{
-	CheckOrigin: func(r *http.Request) bool {
-		return true
-	},
+	CheckOrigin:     func(r *http.Request) bool { return true },
 	ReadBufferSize:  1024,
 	WriteBufferSize: 1024,
 }
@@ -38,8 +38,6 @@ type WebSocketResponse struct {
 
 func WebSocketHandler(cfg *config.Config) gin.HandlerFunc {
 	client := llm.NewClient(cfg)
-	// You could also use MCP service here if you want MCP integration in WebSocket
-	// mcpService := NewMCPService(cfg)
 
 	return func(c *gin.Context) {
 		ws, err := upgrader.Upgrade(c.Writer, c.Request, nil)
@@ -47,22 +45,30 @@ func WebSocketHandler(cfg *config.Config) gin.HandlerFunc {
 			log.Printf("Failed to upgrade connection: %v", err)
 			return
 		}
-		defer ws.Close()
+		defer func() {
+			log.Printf("Closing WebSocket connection")
+			ws.Close()
+		}()
 
-		// Set up ping/pong to keep connection alive
 		ws.SetReadDeadline(time.Now().Add(60 * time.Second))
 		ws.SetPongHandler(func(string) error {
 			ws.SetReadDeadline(time.Now().Add(60 * time.Second))
 			return nil
 		})
 
-		// Start ping ticker
 		ticker := time.NewTicker(54 * time.Second)
 		defer ticker.Stop()
+		done := make(chan bool)
+		defer close(done)
 
 		go func() {
-			for range ticker.C {
-				if err := ws.WriteMessage(websocket.PingMessage, nil); err != nil {
+			for {
+				select {
+				case <-ticker.C:
+					if err := ws.WriteMessage(websocket.PingMessage, nil); err != nil {
+						return
+					}
+				case <-done:
 					return
 				}
 			}
@@ -70,22 +76,20 @@ func WebSocketHandler(cfg *config.Config) gin.HandlerFunc {
 
 		for {
 			var wsMsg WebSocketMessage
-			err := ws.ReadJSON(&wsMsg)
-			if err != nil {
+			if err := ws.ReadJSON(&wsMsg); err != nil {
 				log.Printf("Error reading message: %v", err)
 				break
 			}
 
 			switch wsMsg.Type {
 			case "chat":
-				handleChatMessage(ws, client, &wsMsg, c.Request.Context())
-			case "ping":
-				// Respond to ping
-				response := WebSocketResponse{Type: "pong"}
-				if err := ws.WriteJSON(response); err != nil {
-					log.Printf("Error sending pong: %v", err)
-					break
+				if err := handleChatMessage(ws, client, &wsMsg, c.Request.Context()); err != nil {
+					log.Printf("Error handling chat message: %v", err)
+					sendError(ws, "Error processing chat message")
 				}
+			case "ping":
+				response := WebSocketResponse{Type: "pong"}
+				ws.WriteJSON(response)
 			default:
 				log.Printf("Unknown message type: %s", wsMsg.Type)
 			}
@@ -93,83 +97,69 @@ func WebSocketHandler(cfg *config.Config) gin.HandlerFunc {
 	}
 }
 
-func handleChatMessage(ws *websocket.Conn, client *llm.Client, wsMsg *WebSocketMessage, ctx context.Context) {
-	var messages []llm.Message
-
-	// Handle different input formats
-	if len(wsMsg.Messages) > 0 {
-		messages = wsMsg.Messages
-	} else if wsMsg.Content != "" {
-		messages = []llm.Message{
-			{
-				Role:    "user",
-				Content: wsMsg.Content,
-			},
-		}
-	} else {
-		sendError(ws, "No message content provided")
-		return
+func handleChatMessage(ws *websocket.Conn, client *llm.Client, wsMsg *WebSocketMessage, parentCtx context.Context) error {
+	messages := extractMessages(wsMsg)
+	if len(messages) == 0 {
+		return sendError(ws, "No message content provided")
 	}
 
-	log.Printf("Processing chat message with %d messages", len(messages))
-
-	// Create response channel for LLM chunks
 	responseChan := make(chan string, 100)
+	var closeOnce sync.Once
+	closeResponseChan := func() { closeOnce.Do(func() { close(responseChan) }) }
+	defer closeResponseChan()
 
-	// Create context with timeout
-	ctx, cancel := context.WithTimeout(ctx, 5*time.Minute)
+	msgCtx, cancel := context.WithTimeout(parentCtx, 5*time.Minute)
 	defer cancel()
 
-	// Start generating in background
-	go func() {
-		defer close(responseChan)
-		if err := client.GenerateStream(ctx, messages, responseChan); err != nil {
+	go func(msgs []llm.Message) {
+		defer func() {
+			if r := recover(); r != nil {
+				log.Printf("Recovered from panic in generation goroutine: %v", r)
+			}
+		}()
+		if err := client.GenerateStream(msgCtx, msgs, responseChan); err != nil {
 			log.Printf("Error generating: %v", err)
-			sendError(ws, "Error generating response: "+err.Error())
-			return
+			select {
+			case responseChan <- "ERROR: " + err.Error():
+			case <-msgCtx.Done():
+			}
 		}
-	}()
+	}(messages)
 
-	// Forward chunks to websocket
-	for {
-		select {
-		case chunk, ok := <-responseChan:
-			if !ok {
-				// Channel closed, send final message
-				response := WebSocketResponse{
-					Type: "chat_chunk",
-					Done: true,
-				}
-				if err := ws.WriteJSON(response); err != nil {
-					log.Printf("Error writing final chunk: %v", err)
-				}
-				return
-			}
+	for chunk := range responseChan {
+		if strings.HasPrefix(chunk, "ERROR: ") {
+			return sendError(ws, strings.TrimPrefix(chunk, "ERROR: "))
+		}
 
-			response := WebSocketResponse{
-				Type:    "chat_chunk",
-				Content: chunk,
-				Done:    false,
-			}
-
-			if err := ws.WriteJSON(response); err != nil {
-				log.Printf("Error writing chunk: %v", err)
-				return
-			}
-
-		case <-ctx.Done():
-			sendError(ws, "Request timeout")
-			return
+		if err := ws.WriteJSON(WebSocketResponse{
+			Type:    "chat_chunk",
+			Content: chunk,
+			Done:    false,
+		}); err != nil {
+			return err
 		}
 	}
+
+	return ws.WriteJSON(WebSocketResponse{
+		Type: "chat_chunk",
+		Done: true,
+	})
 }
 
-func sendError(ws *websocket.Conn, errorMsg string) {
+func extractMessages(wsMsg *WebSocketMessage) []llm.Message {
+	if len(wsMsg.Messages) > 0 {
+		return wsMsg.Messages
+	}
+	if wsMsg.Content != "" {
+		return []llm.Message{{Role: "user", Content: wsMsg.Content}}
+	}
+	return nil
+}
+
+func sendError(ws *websocket.Conn, errorMsg string) error {
 	response := WebSocketResponse{
 		Type:  "error",
 		Error: errorMsg,
 	}
-	if err := ws.WriteJSON(response); err != nil {
-		log.Printf("Error sending error message: %v", err)
-	}
+	return ws.WriteJSON(response)
 }

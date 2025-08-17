@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
 	"net/http"
 	"strings"
 	"time"
@@ -23,37 +22,33 @@ type Client struct {
 	http    *http.Client
 }
 
-// NewClient creates a new LLM client with the given configuration
 func NewClient(cfg *config.Config) *Client {
 	return &Client{
 		url:     cfg.LLM.URL,
 		model:   cfg.LLM.Model,
 		timeout: cfg.LLM.Timeout,
-		http:    &http.Client{Timeout: cfg.LLM.Timeout},
+		// No Timeout here so streaming isn't cut off; rely on ctx for cancellation.
+		http: &http.Client{},
 	}
 }
 
-// GenerateRequest represents a request to the LLM API
 type GenerateRequest struct {
 	Model    string    `json:"model"`
 	Messages []Message `json:"messages"`
 	Stream   bool      `json:"stream"`
 }
 
-// Message represents a chat message
 type Message struct {
 	Role    string `json:"role"`
 	Content string `json:"content"`
 }
 
-// GenerateResponse represents a response from the LLM API
 type GenerateResponse struct {
 	Choices []struct {
 		Message Message `json:"message"`
 	} `json:"choices"`
 }
 
-// SSEResponse represents a streaming response chunk from the LLM API
 type SSEResponse struct {
 	ID      string `json:"id"`
 	Object  string `json:"object"`
@@ -68,13 +63,9 @@ type SSEResponse struct {
 	} `json:"choices"`
 }
 
-// GenerateStream sends a request to llama.cpp and streams the response chunks through the provided channel
+// GenerateStream sends a request to llama.cpp and streams chunks into responseChan.
+// IMPORTANT: this function **does not** close responseChan. The caller owns closing it.
 func (c *Client) GenerateStream(ctx context.Context, messages []Message, responseChan chan<- string) error {
-	defer close(responseChan)
-
-	log.Printf("Sending request to llama.cpp at %s", c.url)
-
-	// Create HTTP request for llama.cpp's OpenAI-compatible API
 	llmReq := GenerateRequest{
 		Model:    c.model,
 		Messages: messages,
@@ -86,97 +77,99 @@ func (c *Client) GenerateStream(ctx context.Context, messages []Message, respons
 		return fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	log.Printf("Request payload: %s", string(jsonBody))
-
-	httpReq, err := http.NewRequestWithContext(ctx, "POST", c.url+"/v1/chat/completions", bytes.NewBuffer(jsonBody))
+	req, err := http.NewRequestWithContext(ctx, "POST", c.url+"/v1/chat/completions", bytes.NewBuffer(jsonBody))
 	if err != nil {
 		return fmt.Errorf("failed to create request: %w", err)
 	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "text/event-stream")
 
-	httpReq.Header.Set("Content-Type", "application/json")
-	httpReq.Header.Set("Accept", "text/event-stream")
-
-	resp, err := c.http.Do(httpReq)
+	resp, err := c.http.Do(req)
 	if err != nil {
 		return fmt.Errorf("failed to send request to llama.cpp: %w", err)
 	}
 	defer resp.Body.Close()
 
-	log.Printf("llama.cpp response status: %d", resp.StatusCode)
-
 	if resp.StatusCode != http.StatusOK {
-		// Read error response body for debugging
 		body, _ := io.ReadAll(resp.Body)
 		return fmt.Errorf("llama.cpp returned status %d: %s", resp.StatusCode, string(body))
 	}
 
-	// Read the streaming response from llama.cpp
-	scanner := bufio.NewScanner(resp.Body)
-	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
+	// Safe send helper: avoids panic if caller closed the channel.
+	trySend := func(s string) error {
+		defer func() {
+			_ = recover() // swallow "send on closed channel"
+		}()
+		select {
+		case responseChan <- s:
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+		return nil
+	}
 
-		// Skip empty lines and comments
+	scanner := bufio.NewScanner(resp.Body)
+	// Increase max token size to handle larger SSE lines safely.
+	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
+
+	for scanner.Scan() {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+		}
+
+		line := strings.TrimSpace(scanner.Text())
 		if line == "" || strings.HasPrefix(line, ":") {
 			continue
 		}
 
-		log.Printf("Received line from llama.cpp: %s", line)
+		if !strings.HasPrefix(line, "data: ") {
+			continue
+		}
 
-		// Handle SSE format
-		if strings.HasPrefix(line, "data: ") {
-			data := strings.TrimPrefix(line, "data: ")
+		data := strings.TrimPrefix(line, "data: ")
 
-			// Check for end of stream
-			if data == "[DONE]" {
-				log.Printf("llama.cpp stream completed")
-				break
-			}
+		// End of stream marker
+		if data == "[DONE]" {
+			break
+		}
 
-			// Try to parse as JSON (OpenAI format)
-			var streamResp SSEResponse
-			if err := json.Unmarshal([]byte(data), &streamResp); err != nil {
-				log.Printf("Failed to parse JSON from llama.cpp, treating as plain text: %v", err)
-				// If not JSON, treat as plain text (fallback)
-				if data != "" {
-					select {
-					case responseChan <- data:
-					case <-ctx.Done():
-						return ctx.Err()
-					}
-				}
-				continue
-			}
-
-			// Extract content from OpenAI-compatible response
-			if len(streamResp.Choices) > 0 {
-				choice := streamResp.Choices[0]
-				if choice.Delta.Content != "" {
-					log.Printf("Sending chunk to frontend: %s", choice.Delta.Content)
-					select {
-					case responseChan <- choice.Delta.Content:
-					case <-ctx.Done():
-						return ctx.Err()
-					}
-				}
-
-				// Check if stream is finished
-				if choice.FinishReason != "" {
-					log.Printf("llama.cpp stream finished: %s", choice.FinishReason)
-					break
+		// Parse OpenAI-compatible SSE chunk
+		var sse SSEResponse
+		if err := json.Unmarshal([]byte(data), &sse); err != nil {
+			// Fallback: forward raw data
+			if data != "" {
+				if err := trySend(data); err != nil {
+					return err
 				}
 			}
+			continue
+		}
+
+		if len(sse.Choices) > 0 {
+			ch := sse.Choices[0]
+			if ch.Delta.Content != "" {
+				if err := trySend(ch.Delta.Content); err != nil {
+					return err
+				}
+			}
+			// Some servers set FinishReason in a mid-stream record—ignore and rely on [DONE]
 		}
 	}
 
 	if err := scanner.Err(); err != nil {
+		// If ctx ended, prefer ctx error for clarity
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
 		return fmt.Errorf("error reading from llama.cpp stream: %w", err)
 	}
 
-	log.Printf("Successfully processed llama.cpp stream")
 	return nil
 }
 
-// Generate generates a non-streaming response from llama.cpp
+// Generate performs a standard (non-streaming) completion.
 func (c *Client) Generate(ctx context.Context, messages []Message) (*GenerateResponse, error) {
 	reqBody := GenerateRequest{
 		Model:    c.model,
@@ -188,8 +181,6 @@ func (c *Client) Generate(ctx context.Context, messages []Message) (*GenerateRes
 	if err != nil {
 		return nil, fmt.Errorf("error marshaling request: %w", err)
 	}
-
-	log.Printf("Sending non-streaming request to llama.cpp: %s", string(jsonBody))
 
 	req, err := http.NewRequestWithContext(ctx, "POST", c.url+"/v1/chat/completions", bytes.NewBuffer(jsonBody))
 	if err != nil {
@@ -204,7 +195,6 @@ func (c *Client) Generate(ctx context.Context, messages []Message) (*GenerateRes
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		// Read error response body
 		body, _ := io.ReadAll(resp.Body)
 		return nil, fmt.Errorf("llama.cpp returned status %d: %s", resp.StatusCode, string(body))
 	}
@@ -214,6 +204,5 @@ func (c *Client) Generate(ctx context.Context, messages []Message) (*GenerateRes
 		return nil, fmt.Errorf("error decoding llama.cpp response: %w", err)
 	}
 
-	log.Printf("Successfully got response from llama.cpp")
 	return &result, nil
 }
