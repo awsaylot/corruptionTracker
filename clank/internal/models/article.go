@@ -40,13 +40,6 @@ type EntityMention struct {
 }
 
 // ExtractedRelationship represents a relationship between entities found in an article
-// ExtractionResult represents the structured output from article processing
-type ExtractionResult struct {
-	Entities      []ExtractedEntity       `json:"entities"`
-	Relationships []ExtractedRelationship `json:"relationships"`
-	Confidence    float64                 `json:"confidence"`
-}
-
 type ExtractedRelationship struct {
 	ID          string                 `json:"id"`
 	Type        string                 `json:"type"`
@@ -61,9 +54,10 @@ type ExtractedRelationship struct {
 
 // ExtractionResult contains all information extracted from an article
 type ExtractionResult struct {
-	Article        Article                 `json:"article"`
+	Article        *Article                `json:"article,omitempty"`
 	Entities       []ExtractedEntity       `json:"entities"`
 	Relationships  []ExtractedRelationship `json:"relationships"`
-	ProcessingTime time.Duration           `json:"processingTime"`
+	Confidence     float64                 `json:"confidence"`
+	ProcessingTime time.Duration           `json:"processingTime,omitempty"`
 	Error          string                  `json:"error,omitempty"`
 }
