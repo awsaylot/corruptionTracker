@@ -1,0 +1,56 @@
+# Node modules
+/frontend/node_modules/
+
+# Next.js build output
+/frontend/.next/
+/frontend/out/
+
+# Production build output
+/frontend/build/
+
+# Logs
+/frontend/npm-debug.log*
+/frontend/yarn-debug.log*
+/frontend/yarn-error.log*
+
+# Env files
+/frontend/.env
+/frontend/.env.local
+/frontend/.env.development.local
+/frontend/.env.test.local
+/frontend/.env.production.local
+
+# MacOS files
+/frontend/.DS_Store
+
+# Editor directories and files
+/frontend/.vscode/
+/frontend/.idea/
+/frontend/*.sublime-project
+/frontend/*.sublime-workspace
+
+# Typescript cache
+/frontend/*.tsbuildinfo
+
+# Optional npm cache
+/frontend/.npm/
+
+# Optional REPL history
+.node_repl_history
+
+# Parcel-bundler cache (if used)
+.cache/
+
+# Storybook build outputs
+.out/
+
+# Misc
+*.log
+
+# Debug
+debug.log*
+
+# Jest coverage directory
+/coverage/
+
+*.gguf

@@ -1,0 +1,12 @@
+server:
+  address: ":8080"
+mcp:
+  listen_path: "/mcp"
+llm:
+  url: "http://llm:8090"  # LLM service URL in Docker network
+  model: "llama2"         # Default model
+  timeout: "30s"          # Request timeout
+neo4j:
+  uri: "bolt://neo4j:7687"  # Neo4j service URL in Docker network
+  username: "neo4j"         # Neo4j username
+  password: "your_secure_password"  # Match password from docker-compose.yml
