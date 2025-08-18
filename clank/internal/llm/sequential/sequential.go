@@ -21,7 +21,7 @@ func NewSurfaceExtractionStage() *SurfaceExtractionStage {
 	}
 }
 
-func (s *SurfaceExtractionStage) WithLLMClient(client *llm.Client) *SurfaceExtractionStage {
+func (s *SurfaceExtractionStage) WithLLMClient(client *llm.Client) AnalysisStageProcessor {
 	s.llmClient = client
 	return s
 }
@@ -93,8 +93,16 @@ Extract entities and relationships in this JSON format:
 
 	// Use LLM to extract entities
 	messages := []llm.Message{
-		{Role: "system", Content: "You are an expert entity extraction system for corruption analysis."},
-		{Role: "user", Content: prompt},
+		{
+			Role:      "system",
+			Content:   "You are an expert entity extraction system for corruption analysis.",
+			CreatedAt: time.Now(),
+		},
+		{
+			Role:      "user",
+			Content:   prompt,
+			CreatedAt: time.Now(),
+		},
 	}
 
 	resp, err := s.llmClient.Generate(ctx, messages)
@@ -102,13 +110,24 @@ Extract entities and relationships in this JSON format:
 		return fmt.Errorf("LLM generation failed: %w", err)
 	}
 
+	if resp.Error != "" {
+		return fmt.Errorf("LLM error: %s", resp.Error)
+	}
+
 	if len(resp.Choices) == 0 {
 		return fmt.Errorf("no response from LLM")
 	}
 
+	var content string
+	if resp.Choices[0].Content != "" {
+		content = resp.Choices[0].Content
+	} else {
+		content = resp.Choices[0].Message.Content
+	}
+
 	// Parse the response
 	var result models.ExtractionResult
-	if err := json.Unmarshal([]byte(resp.Choices[0].Message.Content), &result); err != nil {
+	if err := json.Unmarshal([]byte(content), &result); err != nil {
 		return fmt.Errorf("failed to parse LLM response: %w", err)
 	}
 
@@ -145,7 +164,7 @@ func NewDeepAnalysisStage() *DeepAnalysisStage {
 	}
 }
 
-func (s *DeepAnalysisStage) WithLLMClient(client *llm.Client) *DeepAnalysisStage {
+func (s *DeepAnalysisStage) WithLLMClient(client *llm.Client) AnalysisStageProcessor {
 	s.llmClient = client
 	return s
 }
@@ -270,7 +289,7 @@ func NewCrossReferenceStage() *CrossReferenceStage {
 	}
 }
 
-func (s *CrossReferenceStage) WithLLMClient(client *llm.Client) *CrossReferenceStage {
+func (s *CrossReferenceStage) WithLLMClient(client *llm.Client) AnalysisStageProcessor {
 	s.llmClient = client
 	return s
 }
@@ -390,7 +409,7 @@ func NewHypothesisGenerationStage() *HypothesisGenerationStage {
 	}
 }
 
-func (s *HypothesisGenerationStage) WithLLMClient(client *llm.Client) *HypothesisGenerationStage {
+func (s *HypothesisGenerationStage) WithLLMClient(client *llm.Client) AnalysisStageProcessor {
 	s.llmClient = client
 	return s
 }
@@ -488,7 +507,7 @@ func NewRecursiveRefinementStage() *RecursiveRefinementStage {
 	}
 }
 
-func (s *RecursiveRefinementStage) WithLLMClient(client *llm.Client) *RecursiveRefinementStage {
+func (s *RecursiveRefinementStage) WithLLMClient(client *llm.Client) AnalysisStageProcessor {
 	s.llmClient = client
 	return s
 }

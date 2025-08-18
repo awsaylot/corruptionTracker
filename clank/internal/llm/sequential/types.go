@@ -48,29 +48,7 @@ type AnalysisStage struct {
 	Error       string                   `json:"error,omitempty"`
 }
 
-// Evidence represents a piece of evidence in the analysis
-type Evidence struct {
-	ID          string                 `json:"id"`
-	Type        string                 `json:"type"`
-	Description string                 `json:"description"`
-	Source      string                 `json:"source"`
-	Confidence  float64                `json:"confidence"`
-	Metadata    map[string]interface{} `json:"metadata"`
-	CreatedAt   time.Time              `json:"createdAt"`
-}
-
-// Hypothesis represents a generated hypothesis
-type Hypothesis struct {
-	ID                    string    `json:"id"`
-	Description           string    `json:"description"`
-	Type                  string    `json:"type"`
-	Confidence            float64   `json:"confidence"`
-	SupportingEvidence    []string  `json:"supporting_evidence"`
-	ContradictingEvidence []string  `json:"contradicting_evidence"`
-	RequiredEvidence      []string  `json:"required_evidence"`
-	Implications          []string  `json:"implications"`
-	CreatedAt             time.Time `json:"createdAt"`
-}
+// Evidence and Hypothesis types are defined in evidence.go
 
 // AnalysisStageProcessor defines the interface for analysis stage processors
 type AnalysisStageProcessor interface {

@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"encoding/json"
+	"log"
 	"net/http"
 	"net/url"
 	"time"
@@ -11,18 +12,16 @@ import (
 	"clank/internal/llm"
 	"clank/internal/llm/sequential"
 	"clank/internal/models"
-	"clank/internal/tools/browser"
+	browser "clank/internal/tools/browser"
 	"clank/pkg/extraction"
-
-	"github.com/google/uuid"
 )
 
 // ExtractionHandler handles article content extraction requests with sequential analysis
 type ExtractionHandler struct {
-	scraper            *browser.ArticleScraper
-	processor          *extraction.ContentProcessor
-	llm                *llm.Client
-	db                 *db.ArticleStore
+	scraper            Scraper
+	processor          Processor
+	llm                LLMClient
+	db                 Store
 	analysisController *sequential.AnalysisController
 }
 
@@ -54,16 +53,22 @@ type ExtractionResponse struct {
 
 // HandleURLExtraction processes a URL for article extraction with sequential analysis
 func (h *ExtractionHandler) HandleURLExtraction(w http.ResponseWriter, r *http.Request) {
+	log.Printf("[Extraction] Received request from %s", r.RemoteAddr)
+
 	if r.Method != http.MethodPost {
+		log.Printf("[Extraction] Invalid method %s from %s", r.Method, r.RemoteAddr)
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 
 	var req ExtractionRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		log.Printf("[Extraction] Failed to decode request body: %v", err)
 		http.Error(w, "Invalid request body", http.StatusBadRequest)
 		return
 	}
+
+	log.Printf("[Extraction] Processing URL: %s", req.URL)
 
 	// Validate URL
 	if req.URL == "" {
@@ -71,8 +76,7 @@ func (h *ExtractionHandler) HandleURLExtraction(w http.ResponseWriter, r *http.R
 		return
 	}
 
-	parsedURL, err := url.Parse(req.URL)
-	if err != nil {
+	if _, err := url.Parse(req.URL); err != nil {
 		http.Error(w, "Invalid URL", http.StatusBadRequest)
 		return
 	}
@@ -89,30 +93,59 @@ func (h *ExtractionHandler) HandleURLExtraction(w http.ResponseWriter, r *http.R
 	// Create context for the request
 	ctx := r.Context()
 
-	// Scrape the article
-	rawContent, metadata, err := h.scraper.ScrapeArticle(req.URL)
-	if err != nil {
-		http.Error(w, "Failed to scrape article: "+err.Error(), http.StatusInternalServerError)
+	// Initialize scraper if needed
+	log.Println("[Extraction] Initializing scraper...")
+	if err := h.scraper.Initialize(); err != nil {
+		log.Printf("[Extraction] Scraper initialization failed: %v", err)
+		http.Error(w, "Failed to initialize scraper: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
 
-	// Clean and process the content
-	cleanedContent := h.processor.CleanContent(rawContent)
+	// Scrape the article
+	log.Printf("[Extraction] Starting article scraping for URL: %s", req.URL)
+	article, err := h.scraper.ScrapeArticle(req.URL)
+	if err != nil {
+		log.Printf("[Extraction] Article scraping failed: %v", err)
+		http.Error(w, "Failed to scrape article: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	log.Printf("[Extraction] Successfully scraped article, length: %d characters", len(article.Content))
 
-	// Create article model
-	article := &models.Article{
-		ID:          uuid.New().String(),
-		URL:         req.URL,
-		Title:       metadata["title"].(string),
-		Content:     cleanedContent,
-		Source:      metadata["source"].(string),
-		Author:      metadata["author"].(string),
-		PublishDate: metadata["publishDate"].(time.Time),
-		ExtractedAt: time.Now(),
-		Metadata:    metadata,
+	// Process the content
+	log.Println("[Extraction] Starting article processing...")
+	result, err := h.processor.ProcessArticle(article.Content)
+	if err != nil {
+		log.Printf("[Extraction] Article processing failed: %v", err)
+		http.Error(w, "Failed to process article: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	log.Println("[Extraction] Article processing completed successfully")
+
+	// Update article with processed content
+	article.Content = result.Content
+	if result.Title != "" {
+		article.Title = result.Title
+	}
+	if result.Metadata != nil {
+		article.Metadata = result.Metadata
 	}
 
+	// Save the article
+	log.Println("[Extraction] Saving article to database...")
+	if err := h.db.SaveArticle(article); err != nil {
+		log.Printf("[Extraction] Failed to save article: %v", err)
+		http.Error(w, "Failed to save article: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	log.Printf("[Extraction] Article saved successfully with ID: %s", article.ID)
+
+	// Set timestamps
+	article.ExtractedAt = time.Now()
+	article.CreatedAt = time.Now()
+	article.UpdatedAt = time.Now()
+
 	// Configure sequential analysis
+	log.Printf("[Extraction] Configuring analysis with depth %d...", req.Depth)
 	config := &sequential.AnalysisConfig{
 		Depth:                req.Depth,
 		MaxStages:            5,
@@ -121,6 +154,7 @@ func (h *ExtractionHandler) HandleURLExtraction(w http.ResponseWriter, r *http.R
 		EnableCrossReference: true,
 		EnableHypotheses:     true,
 	}
+	log.Println("[Extraction] Analysis configuration complete")
 
 	// Start sequential analysis
 	session, err := h.analysisController.StartAnalysis(ctx, article, config)
@@ -130,7 +164,7 @@ func (h *ExtractionHandler) HandleURLExtraction(w http.ResponseWriter, r *http.R
 	}
 
 	// Store article in database
-	if err := h.db.StoreArticle(article, nil); err != nil {
+	if err := h.db.SaveArticle(article); err != nil {
 		http.Error(w, "Failed to store article data: "+err.Error(), http.StatusInternalServerError)
 		return
 	}

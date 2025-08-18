@@ -1,4 +1,4 @@
-package tools
+package browser
 
 import (
 	"context"
@@ -40,15 +40,11 @@ func TestBrowserAutomation(t *testing.T) {
 	time.Sleep(5 * time.Second)
 	t.Log("Waited 5 seconds...")
 
-	// Test waiting for and getting text from Google's search input
-	t.Log("Waiting for search input...")
-	err = browser.WaitForSelector(ctx, "textarea[name=q]") // Google sometimes uses textarea instead of input
+	// Test getting text from Google's search input
+	t.Log("Checking for search input...")
+	_, err = browser.GetElementTextBySelector(ctx, "textarea[name=q]") // Google sometimes uses textarea instead of input
 	if err != nil {
-		t.Fatalf("Failed to wait for selector: %v", err)
+		t.Fatalf("Failed to get search input: %v", err)
 	}
-	t.Log("Found search input") // Test screenshot
-	err = browser.Screenshot(ctx, "example_screenshot.png")
-	if err != nil {
-		t.Fatalf("Failed to take screenshot: %v", err)
-	}
+	t.Log("Found search input")
 }

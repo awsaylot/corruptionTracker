@@ -1,4 +1,4 @@
-package tools
+package browser
 
 import (
 	"context"
@@ -61,37 +61,91 @@ func (ba *BrowserAutomation) Initialize(ctx context.Context) error {
 
 // NavigateTo navigates to the specified URL
 func (ba *BrowserAutomation) NavigateTo(ctx context.Context, url string) error {
-	if _, err := ba.page.Goto(url, playwright.PageGotoOptions{
-		Timeout:   playwright.Float(60000),
-		WaitUntil: playwright.WaitUntilStateNetworkidle,
-	}); err != nil {
-		return fmt.Errorf("could not navigate to %s: %v", url, err)
+	if ba.page == nil {
+		return fmt.Errorf("browser not initialized")
 	}
+
+	_, err := ba.page.Goto(url)
+	if err != nil {
+		return fmt.Errorf("failed to navigate to %s: %v", url, err)
+	}
+
 	return nil
 }
 
-// WaitForSelector waits for an element matching the specified selector to be present
-func (ba *BrowserAutomation) WaitForSelector(ctx context.Context, selector string) error {
-	if _, err := ba.page.WaitForSelector(selector, playwright.PageWaitForSelectorOptions{
-		State:   playwright.WaitForSelectorStateVisible,
-		Timeout: playwright.Float(30000),
-	}); err != nil {
-		return fmt.Errorf("could not wait for selector %s: %v", selector, err)
+// GetElementTextBySelector gets the text content of an element by selector
+func (ba *BrowserAutomation) GetElementTextBySelector(ctx context.Context, selector string) (string, error) {
+	if ba.page == nil {
+		return "", fmt.Errorf("browser not initialized")
 	}
-	return nil
+
+	element, err := ba.page.QuerySelector(selector)
+	if err != nil {
+		return "", fmt.Errorf("failed to query selector %s: %v", selector, err)
+	}
+	if element == nil {
+		return "", fmt.Errorf("no element found for selector %s", selector)
+	}
+
+	text, err := element.TextContent()
+	if err != nil {
+		return "", fmt.Errorf("failed to get text content: %v", err)
+	}
+
+	return text, nil
 }
 
-// Close closes the browser and cleans up resources
+// GetElementAttributeBySelector gets the value of an attribute from an element by selector
+func (ba *BrowserAutomation) GetElementAttributeBySelector(ctx context.Context, selector, attribute string) (string, error) {
+	if ba.page == nil {
+		return "", fmt.Errorf("browser not initialized")
+	}
+
+	element, err := ba.page.QuerySelector(selector)
+	if err != nil {
+		return "", fmt.Errorf("failed to query selector %s: %v", selector, err)
+	}
+	if element == nil {
+		return "", fmt.Errorf("no element found for selector %s", selector)
+	}
+
+	value, err := element.GetAttribute(attribute)
+	if err != nil {
+		return "", fmt.Errorf("failed to get attribute %s: %v", attribute, err)
+	}
+
+	return value, nil
+}
+
+// Close cleans up browser resources
 func (ba *BrowserAutomation) Close() error {
+	if ba.page != nil {
+		err := ba.page.Close()
+		if err != nil {
+			return fmt.Errorf("failed to close page: %v", err)
+		}
+	}
+
+	if ba.context != nil {
+		err := ba.context.Close()
+		if err != nil {
+			return fmt.Errorf("failed to close context: %v", err)
+		}
+	}
+
 	if ba.browser != nil {
-		if err := ba.browser.Close(); err != nil {
-			return fmt.Errorf("could not close browser: %v", err)
+		err := ba.browser.Close()
+		if err != nil {
+			return fmt.Errorf("failed to close browser: %v", err)
 		}
 	}
+
 	if ba.pw != nil {
-		if err := ba.pw.Stop(); err != nil {
-			return fmt.Errorf("could not stop playwright: %v", err)
+		err := ba.pw.Stop()
+		if err != nil {
+			return fmt.Errorf("failed to stop playwright: %v", err)
 		}
 	}
+
 	return nil
 }

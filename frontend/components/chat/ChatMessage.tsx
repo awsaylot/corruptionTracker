@@ -37,7 +37,7 @@ export default function ChatMessage({ message, onRetry }: ChatMessageProps) {
                     }
                 `}
             >
-                <p className="whitespace-pre-wrap break-words">{message.content}</p>
+                <pre className="whitespace-pre-wrap break-words font-mono text-sm overflow-x-auto">{message.content}</pre>
                 {message.status !== 'sent' && (
                     <div className="mt-1">
                         <div className="flex items-center text-xs opacity-75">

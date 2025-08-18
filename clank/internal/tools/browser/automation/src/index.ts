@@ -30,10 +30,6 @@ async function main() {
                 await browser.navigate(command.options.url);
                 break;
 
-            case 'screenshot':
-                await browser.screenshot(command.options.path);
-                break;
-
             case 'click':
                 await browser.click(command.options.selector);
                 break;

@@ -1,14 +1,47 @@
+import { ExtractedContent, ExtractionResponse } from '../types/extraction';
+
 interface APIEndpoints {
   HEALTH: string;
   STATUS: string;
   CHAT_WS: string;
+  EXTRACTION: string;
 }
 
 const API_ENDPOINTS: APIEndpoints = {
   HEALTH: '/api/health',
   STATUS: '/api/metrics',
-  CHAT_WS: '/api/chat/ws'
+  CHAT_WS: '/api/chat/ws',
+  EXTRACTION: '/api/extraction'
 };
+
+export async function extractContent(url: string): Promise<ExtractedContent> {
+  const baseUrl = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080').replace(/\/$/, '');
+  
+  try {
+    const response = await fetch(`${baseUrl}${API_ENDPOINTS.EXTRACTION}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ url })
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(errorData.error || 'Failed to extract content');
+    }
+
+    const data: ExtractionResponse = await response.json();
+    if (!data.success) {
+      throw new Error(data.error || 'Failed to extract content');
+    }
+
+    return data.data;
+  } catch (error) {
+    console.error('Error extracting content:', error);
+    throw error;
+  }
+}
 
 export class LLMService {
   private baseUrl: string;

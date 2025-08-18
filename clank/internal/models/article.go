@@ -6,15 +6,19 @@ import (
 
 // Article represents a news article and its extracted information
 type Article struct {
-	ID          string                 `json:"id"`
-	URL         string                 `json:"url"`
-	Title       string                 `json:"title"`
-	Content     string                 `json:"content"`
-	Source      string                 `json:"source"`
-	Author      string                 `json:"author,omitempty"`
-	PublishDate time.Time              `json:"publishDate"`
-	ExtractedAt time.Time              `json:"extractedAt"`
-	Metadata    map[string]interface{} `json:"metadata,omitempty"`
+	ID          string                   `json:"id"`
+	URL         string                   `json:"url"`
+	Title       string                   `json:"title"`
+	Content     string                   `json:"content"`
+	Source      string                   `json:"source"`
+	Author      string                   `json:"author,omitempty"`
+	PublishDate time.Time                `json:"publishDate"`
+	ExtractedAt time.Time                `json:"extractedAt"`
+	Entities    []*ExtractedEntity       `json:"entities,omitempty"`
+	Relations   []*ExtractedRelationship `json:"relations,omitempty"`
+	Metadata    map[string]interface{}   `json:"metadata,omitempty"`
+	CreatedAt   time.Time                `json:"createdAt"`
+	UpdatedAt   time.Time                `json:"updatedAt"`
 }
 
 // ExtractedEntity represents an entity found in an article

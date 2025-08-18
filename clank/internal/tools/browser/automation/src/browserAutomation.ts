@@ -38,13 +38,6 @@ export class BrowserAutomation {
         await this.page.goto(url);
     }
 
-    async screenshot(path: string): Promise<void> {
-        if (!this.page) {
-            throw new Error('Browser not initialized. Call initialize() first.');
-        }
-        await this.page.screenshot({ path });
-    }
-
     async click(selector: string): Promise<void> {
         if (!this.page) {
             throw new Error('Browser not initialized. Call initialize() first.');

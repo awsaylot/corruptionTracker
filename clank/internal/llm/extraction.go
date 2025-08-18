@@ -1,14 +1,12 @@
 package llm
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
-	"net/http"
 	"time"
 
+	"clank/internal/interfaces"
 	"clank/internal/models"
 )
 
@@ -67,7 +65,7 @@ Format your response as a valid JSON object with the following structure:
 	)
 
 	// Create completion request
-	messages := []Message{
+	messages := []interfaces.Message{
 		{
 			Role:    "system",
 			Content: "You are a precise entity extraction system specializing in analyzing corruption-related news articles.",
@@ -78,19 +76,40 @@ Format your response as a valid JSON object with the following structure:
 		},
 	}
 
+	// Convert interface messages to llm.Message
+	llmMessages := make([]Message, len(messages))
+	for i, msg := range messages {
+		llmMessages[i] = Message{
+			Role:      msg.Role,
+			Content:   msg.Content,
+			CreatedAt: time.Now(),
+		}
+	}
+
 	// Send request to LLM
-	resp, err := c.Generate(ctx, messages)
+	resp, err := c.Generate(ctx, llmMessages)
 	if err != nil {
 		return nil, fmt.Errorf("failed to process article: %w", err)
+	}
+
+	if resp.Error != "" {
+		return nil, fmt.Errorf("LLM error: %s", resp.Error)
 	}
 
 	if len(resp.Choices) == 0 {
 		return nil, fmt.Errorf("no response from LLM")
 	}
 
+	var content string
+	if resp.Choices[0].Content != "" {
+		content = resp.Choices[0].Content
+	} else {
+		content = resp.Choices[0].Message.Content
+	}
+
 	// Parse LLM response
 	var result models.ExtractionResult
-	if err := json.Unmarshal([]byte(resp.Choices[0].Message.Content), &result); err != nil {
+	if err := json.Unmarshal([]byte(content), &result); err != nil {
 		return nil, fmt.Errorf("failed to parse LLM response: %w", err)
 	}
 
@@ -107,35 +126,4 @@ Format your response as a valid JSON object with the following structure:
 	}
 
 	return &result, nil
-}
-
-// sendRequest is a helper method for making HTTP requests
-func (c *Client) sendRequest(ctx context.Context, req *GenerateRequest, result *GenerateResponse) error {
-	jsonBody, err := json.Marshal(req)
-	if err != nil {
-		return fmt.Errorf("failed to marshal request: %w", err)
-	}
-
-	httpReq, err := http.NewRequestWithContext(ctx, "POST", c.url+"/v1/chat/completions", bytes.NewBuffer(jsonBody))
-	if err != nil {
-		return fmt.Errorf("failed to create request: %w", err)
-	}
-	httpReq.Header.Set("Content-Type", "application/json")
-
-	resp, err := c.http.Do(httpReq)
-	if err != nil {
-		return fmt.Errorf("failed to send request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("LLM returned status %d: %s", resp.StatusCode, string(body))
-	}
-
-	if err := json.NewDecoder(resp.Body).Decode(result); err != nil {
-		return fmt.Errorf("failed to decode response: %w", err)
-	}
-
-	return nil
 }

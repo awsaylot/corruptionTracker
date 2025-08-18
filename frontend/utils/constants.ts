@@ -1,3 +1,6 @@
+// API URLs
+export const apiURL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080';
+
 // API endpoints for llama.cpp server
 export const API_ENDPOINTS = {
   CHAT: '/v1/chat/completions',

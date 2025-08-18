@@ -99,6 +99,10 @@ func SetupRouter() *gin.Engine {
 			analytics.GET("/network-stats", graph.GetNetworkStatsHandler)
 		}
 
+		// Extraction endpoints
+		extractionHandler := handlers.NewExtractionGinHandler(cfg)
+		api.POST("/extraction", extractionHandler.HandleURLExtraction)
+
 		// Tools endpoint (enhanced with graph context and LLM)
 		api.POST("/run-tool", handlers.ToolHandler)
 	}

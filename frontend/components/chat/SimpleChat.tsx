@@ -35,13 +35,19 @@ export default function SimpleChat() {
 
       <form onSubmit={handleSubmit} className="p-4 border-t">
         <div className="flex space-x-4">
-          <input
-            type="text"
+          <textarea
             value={input}
             onChange={(e) => setInput(e.target.value)}
-            placeholder="Type a message..."
-            className="flex-1 p-2 border rounded"
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                handleSubmit(e);
+              }
+            }}
+            placeholder="Type a message... (Shift + Enter for new line)"
+            className="flex-1 p-2 border rounded resize-y min-h-[40px] max-h-[200px] font-mono"
             disabled={isLoading}
+            rows={1}
           />
           <button
             type="submit"

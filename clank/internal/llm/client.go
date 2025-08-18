@@ -14,13 +14,16 @@ import (
 	"clank/config"
 )
 
-// Client represents an LLM client
+// Client represents an LLM client that implements the LLMProvider interface
 type Client struct {
 	url     string
 	model   string
 	timeout time.Duration
 	http    *http.Client
 }
+
+// Ensure Client implements LLMProvider
+var _ LLMProvider = (*Client)(nil)
 
 func NewClient(cfg *config.Config) *Client {
 	return &Client{
@@ -38,15 +41,12 @@ type GenerateRequest struct {
 	Stream   bool      `json:"stream"`
 }
 
-type Message struct {
-	Role    string `json:"role"`
-	Content string `json:"content"`
-}
-
 type GenerateResponse struct {
-	Choices []struct {
-		Message Message `json:"message"`
-	} `json:"choices"`
+	ID      string   `json:"id"`
+	Object  string   `json:"object"`
+	Created int64    `json:"created"`
+	Model   string   `json:"model"`
+	Choices []Choice `json:"choices"`
 }
 
 type SSEResponse struct {
@@ -169,8 +169,39 @@ func (c *Client) GenerateStream(ctx context.Context, messages []Message, respons
 	return nil
 }
 
+// sendRequest sends a request to the LLM and decodes the response
+func (c *Client) sendRequest(ctx context.Context, req *GenerateRequest, resp interface{}) error {
+	jsonBody, err := json.Marshal(req)
+	if err != nil {
+		return fmt.Errorf("failed to marshal request: %w", err)
+	}
+
+	httpReq, err := http.NewRequestWithContext(ctx, "POST", c.url+"/v1/chat/completions", bytes.NewBuffer(jsonBody))
+	if err != nil {
+		return fmt.Errorf("failed to create request: %w", err)
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+
+	httpResp, err := c.http.Do(httpReq)
+	if err != nil {
+		return fmt.Errorf("failed to send request: %w", err)
+	}
+	defer httpResp.Body.Close()
+
+	if httpResp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(httpResp.Body)
+		return fmt.Errorf("LLM returned status %d: %s", httpResp.StatusCode, string(body))
+	}
+
+	if err := json.NewDecoder(httpResp.Body).Decode(resp); err != nil {
+		return fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	return nil
+}
+
 // Generate performs a standard (non-streaming) completion.
-func (c *Client) Generate(ctx context.Context, messages []Message) (*GenerateResponse, error) {
+func (c *Client) Generate(ctx context.Context, messages []Message) (*Response, error) {
 	reqBody := GenerateRequest{
 		Model:    c.model,
 		Messages: messages,
@@ -179,29 +210,33 @@ func (c *Client) Generate(ctx context.Context, messages []Message) (*GenerateRes
 
 	jsonBody, err := json.Marshal(reqBody)
 	if err != nil {
-		return nil, fmt.Errorf("error marshaling request: %w", err)
+		return NewErrorResponse(fmt.Sprintf("error marshaling request: %v", err)), err
 	}
 
 	req, err := http.NewRequestWithContext(ctx, "POST", c.url+"/v1/chat/completions", bytes.NewBuffer(jsonBody))
 	if err != nil {
-		return nil, fmt.Errorf("error creating request: %w", err)
+		return NewErrorResponse(fmt.Sprintf("error creating request: %v", err)), err
 	}
 	req.Header.Set("Content-Type", "application/json")
 
 	resp, err := c.http.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("error making request to llama.cpp: %w", err)
+		return NewErrorResponse(fmt.Sprintf("error making request to llama.cpp: %v", err)), err
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("llama.cpp returned status %d: %s", resp.StatusCode, string(body))
+		return NewErrorResponse(fmt.Sprintf("llama.cpp returned status %d: %s", resp.StatusCode, string(body))), fmt.Errorf("HTTP %d", resp.StatusCode)
 	}
 
-	var result GenerateResponse
+	var result Response
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, fmt.Errorf("error decoding llama.cpp response: %w", err)
+		return NewErrorResponse(fmt.Sprintf("error decoding llama.cpp response: %v", err)), err
+	}
+
+	if len(result.Choices) == 0 {
+		return NewErrorResponse("no choices in response"), fmt.Errorf("no choices in response")
 	}
 
 	return &result, nil
