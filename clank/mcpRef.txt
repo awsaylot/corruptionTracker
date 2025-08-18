@@ -228,3 +228,4 @@
         func (x *ToolListChangedParams) GetProgressToken() any
         func (x *ToolListChangedParams) SetProgressToken(t any)
     type Transport
+test
