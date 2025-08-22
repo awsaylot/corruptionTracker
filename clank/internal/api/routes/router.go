@@ -5,6 +5,9 @@ import (
 	"clank/internal/api/handlers"
 	"clank/internal/api/handlers/graph"
 	"clank/internal/api/middleware"
+	"context"
+	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 )
@@ -22,6 +25,12 @@ func SetupRouter() *gin.Engine {
 			c.AbortWithStatus(204)
 			return
 		}
+		if strings.HasPrefix(c.Request.URL.Path, "/extractor") {
+			// Set longer timeout for extractor endpoints
+			ctx, cancel := context.WithTimeout(c.Request.Context(), 15*time.Minute)
+			defer cancel()
+			c.Request = c.Request.WithContext(ctx)
+		}
 		c.Next()
 	})
 
@@ -30,6 +39,14 @@ func SetupRouter() *gin.Engine {
 
 	// WebSocket for real-time chat with llama.cpp
 	r.GET("/ws", handlers.WebSocketHandler(cfg))
+
+	// Article extraction endpoints
+	r.POST("/extractor", handlers.ExtractorHandler(cfg))
+	r.POST("/extractor/integrate", handlers.ExtractAndIntegrateHandler(cfg))
+	r.POST("/extractor/stream", handlers.ExtractorStreamHandler(cfg))
+
+	// Graph integration endpoint (for extracted data)
+	r.POST("/graph/integrate", handlers.GraphIntegrationHandler)
 
 	// LLM endpoints (direct HTTP API to llama.cpp)
 	llm := r.Group("/llm")

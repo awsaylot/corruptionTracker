@@ -1,0 +1,1633 @@
+# Complete Feature Development Guide: Network Analysis Tool
+
+This guide walks you through building a complete network analysis feature from scratch. We'll create a system that can analyze suspicious networks, detect potential corruption patterns, and generate investigative insights using your graph database and LLM integration.
+
+## Feature Overview: Network Analysis Tool
+
+We're building a feature that:
+1. **Analyzes networks** of entities to find suspicious patterns
+2. **Detects corruption indicators** using AI analysis
+3. **Generates investigation reports** with recommendations
+4. **Integrates with MCP** for tool calling capabilities
+5. **Stores analysis results** for future reference
+
+## Step 1: Define the Data Models
+
+First, let's create the data structures we'll need.
+
+### Create `internal/models/network_analysis.go`
+
+```go
+package models
+
+import (
+    "time"
+)
+
+// NetworkAnalysisRequest represents a request to analyze a network
+type NetworkAnalysisRequest struct {
+    CenterNodeID     string   `json:"center_node_id"`           // Main entity to analyze around
+    Depth            int      `json:"depth,omitempty"`          // How many hops to analyze (default: 3)
+    EntityTypes      []string `json:"entity_types,omitempty"`   // Filter by entity types
+    RelationshipTypes []string `json:"relationship_types,omitempty"` // Filter by relationship types
+    AnalysisType     string   `json:"analysis_type"`            // "corruption", "influence", "financial", "all"
+    IncludeRecommendations bool `json:"include_recommendations,omitempty"` // Whether to generate action items
+    SaveResults      bool     `json:"save_results,omitempty"`   // Whether to save analysis to database
+}
+
+// NetworkAnalysisResponse represents the complete analysis result
+type NetworkAnalysisResponse struct {
+    RequestID        string                  `json:"request_id"`
+    CenterEntity     EntitySummary           `json:"center_entity"`
+    NetworkSummary   NetworkSummaryData      `json:"network_summary"`
+    SuspicionScore   float64                 `json:"suspicion_score"`        // 0.0 to 1.0
+    RiskLevel        string                  `json:"risk_level"`             // "LOW", "MEDIUM", "HIGH", "CRITICAL"
+    KeyFindings      []Finding               `json:"key_findings"`
+    SuspiciousPatterns []SuspiciousPattern   `json:"suspicious_patterns"`
+    FinancialAnalysis *FinancialAnalysisData `json:"financial_analysis,omitempty"`
+    Recommendations  []Recommendation        `json:"recommendations"`
+    GeneratedReport  string                  `json:"generated_report"`       // AI-generated narrative report
+    ProcessedAt      time.Time               `json:"processed_at"`
+    ProcessingTime   time.Duration           `json:"processing_time"`
+}
+
+// EntitySummary provides key information about the central entity
+type EntitySummary struct {
+    ID              string                 `json:"id"`
+    Name            string                 `json:"name"`
+    Type            string                 `json:"type"`
+    Properties      map[string]interface{} `json:"properties"`
+    ConnectionCount int                    `json:"connection_count"`
+    Roles           []string               `json:"roles"`               // e.g., "CEO", "Board Member"
+    KnownAliases    []string               `json:"known_aliases"`
+}
+
+// NetworkSummaryData provides high-level network statistics
+type NetworkSummaryData struct {
+    TotalNodes          int                    `json:"total_nodes"`
+    TotalRelationships  int                    `json:"total_relationships"`
+    NodeTypeBreakdown   map[string]int         `json:"node_type_breakdown"`
+    RelationshipTypes   map[string]int         `json:"relationship_types"`
+    NetworkDensity      float64                `json:"network_density"`
+    AveragePathLength   float64                `json:"average_path_length"`
+    ClusteringScore     float64                `json:"clustering_score"`
+    InfluentialEntities []InfluentialEntity    `json:"influential_entities"`
+}
+
+// Finding represents a specific discovery in the analysis
+type Finding struct {
+    ID          string                 `json:"id"`
+    Type        string                 `json:"type"`        // "financial", "regulatory", "behavioral"
+    Severity    string                 `json:"severity"`    // "info", "warning", "critical"
+    Title       string                 `json:"title"`
+    Description string                 `json:"description"`
+    Evidence    []Evidence             `json:"evidence"`
+    Confidence  float64                `json:"confidence"`  // 0.0 to 1.0
+    Entities    []string               `json:"entities"`    // Related entity IDs
+}
+
+// SuspiciousPattern represents detected patterns that might indicate corruption
+type SuspiciousPattern struct {
+    PatternType     string                 `json:"pattern_type"`     // "circular_transactions", "shell_company", "rapid_transfers"
+    Description     string                 `json:"description"`
+    RiskScore       float64                `json:"risk_score"`       // 0.0 to 1.0
+    EntitiesInvolved []string              `json:"entities_involved"`
+    Transactions    []TransactionSummary   `json:"transactions"`
+    TimeWindow      TimeWindow             `json:"time_window"`
+    RedFlags        []string               `json:"red_flags"`
+}
+
+// FinancialAnalysisData contains financial pattern analysis
+type FinancialAnalysisData struct {
+    TotalTransactionValue float64              `json:"total_transaction_value"`
+    LargestTransaction    float64              `json:"largest_transaction"`
+    AverageTransaction    float64              `json:"average_transaction"`
+    TransactionFrequency  map[string]int       `json:"transaction_frequency"`    // by time period
+    UnusualPatterns       []UnusualPattern     `json:"unusual_patterns"`
+    OffshoreConnections   int                  `json:"offshore_connections"`
+    CashTransactions      []TransactionSummary `json:"cash_transactions"`
+}
+
+// Evidence represents supporting evidence for a finding
+type Evidence struct {
+    Type        string                 `json:"type"`         // "relationship", "property", "pattern"
+    Source      string                 `json:"source"`       // "graph_database", "ai_analysis", "external"
+    Description string                 `json:"description"`
+    Data        map[string]interface{} `json:"data"`
+    Confidence  float64                `json:"confidence"`
+}
+
+// Recommendation represents an actionable recommendation
+type Recommendation struct {
+    Priority    string   `json:"priority"`     // "high", "medium", "low"
+    Category    string   `json:"category"`     // "investigation", "compliance", "monitoring"
+    Action      string   `json:"action"`
+    Description string   `json:"description"`
+    Justification string `json:"justification"`
+    NextSteps   []string `json:"next_steps"`
+    Timeline    string   `json:"timeline"`     // "immediate", "short_term", "long_term"
+}
+
+// Supporting types
+type InfluentialEntity struct {
+    ID             string  `json:"id"`
+    Name           string  `json:"name"`
+    Type           string  `json:"type"`
+    InfluenceScore float64 `json:"influence_score"`
+    Connections    int     `json:"connections"`
+}
+
+type TransactionSummary struct {
+    From      string    `json:"from"`
+    To        string    `json:"to"`
+    Amount    float64   `json:"amount"`
+    Date      time.Time `json:"date"`
+    Type      string    `json:"type"`
+    Currency  string    `json:"currency,omitempty"`
+    Reference string    `json:"reference,omitempty"`
+}
+
+type UnusualPattern struct {
+    Type        string  `json:"type"`
+    Description string  `json:"description"`
+    Anomaly     string  `json:"anomaly"`
+    Score       float64 `json:"score"`
+}
+
+type TimeWindow struct {
+    StartDate time.Time `json:"start_date"`
+    EndDate   time.Time `json:"end_date"`
+    Duration  string    `json:"duration"`
+}
+
+// SavedAnalysis represents a stored analysis result
+type SavedAnalysis struct {
+    ID          string                   `json:"id"`
+    RequestID   string                   `json:"request_id"`
+    CenterNodeID string                  `json:"center_node_id"`
+    Analysis    NetworkAnalysisResponse  `json:"analysis"`
+    CreatedAt   time.Time                `json:"created_at"`
+    CreatedBy   string                   `json:"created_by,omitempty"`
+    Tags        []string                 `json:"tags,omitempty"`
+    Status      string                   `json:"status"`      // "completed", "flagged", "reviewed"
+}
+```
+
+## Step 2: Create the Network Analysis Service
+
+This service will handle the core business logic for network analysis.
+
+### Create `internal/services/network_analysis.go`
+
+```go
+package services
+
+import (
+    "context"
+    "encoding/json"
+    "fmt"
+    "log"
+    "math"
+    "sort"
+    "strings"
+    "time"
+    
+    "clank/internal/db"
+    "clank/internal/llm"
+    "clank/internal/models"
+    
+    "github.com/google/uuid"
+    "github.com/neo4j/neo4j-go-driver/v4/neo4j"
+)
+
+type NetworkAnalysisService struct {
+    llmClient *llm.Client
+    promptService *PromptService
+}
+
+func NewNetworkAnalysisService(llmClient *llm.Client) *NetworkAnalysisService {
+    return &NetworkAnalysisService{
+        llmClient: llmClient,
+        promptService: NewPromptService(),
+    }
+}
+
+// AnalyzeNetwork performs comprehensive network analysis
+func (s *NetworkAnalysisService) AnalyzeNetwork(ctx context.Context, req *models.NetworkAnalysisRequest) (*models.NetworkAnalysisResponse, error) {
+    startTime := time.Now()
+    requestID := uuid.New().String()
+    
+    log.Printf("Starting network analysis for node %s (request: %s)", req.CenterNodeID, requestID)
+    
+    // Set defaults
+    if req.Depth == 0 {
+        req.Depth = 3
+    }
+    if req.AnalysisType == "" {
+        req.AnalysisType = "all"
+    }
+    
+    // Step 1: Extract network data from graph database
+    networkData, err := s.extractNetworkData(req)
+    if err != nil {
+        return nil, fmt.Errorf("failed to extract network data: %w", err)
+    }
+    
+    // Step 2: Analyze network structure
+    networkSummary := s.analyzeNetworkStructure(networkData)
+    
+    // Step 3: Detect suspicious patterns
+    suspiciousPatterns, err := s.detectSuspiciousPatterns(ctx, networkData, req.AnalysisType)
+    if err != nil {
+        return nil, fmt.Errorf("failed to detect patterns: %w", err)
+    }
+    
+    // Step 4: Generate findings using AI
+    findings, err := s.generateFindings(ctx, networkData, suspiciousPatterns, req.AnalysisType)
+    if err != nil {
+        return nil, fmt.Errorf("failed to generate findings: %w", err)
+    }
+    
+    // Step 5: Calculate suspicion score and risk level
+    suspicionScore := s.calculateSuspicionScore(findings, suspiciousPatterns)
+    riskLevel := s.determineRiskLevel(suspicionScore)
+    
+    // Step 6: Perform financial analysis if applicable
+    var financialAnalysis *models.FinancialAnalysisData
+    if req.AnalysisType == "financial" || req.AnalysisType == "all" {
+        financialAnalysis = s.performFinancialAnalysis(networkData)
+    }
+    
+    // Step 7: Generate recommendations
+    var recommendations []models.Recommendation
+    if req.IncludeRecommendations {
+        recommendations, err = s.generateRecommendations(ctx, findings, suspiciousPatterns, riskLevel)
+        if err != nil {
+            log.Printf("Failed to generate recommendations: %v", err)
+            // Continue without recommendations rather than fail
+        }
+    }
+    
+    // Step 8: Generate narrative report using AI
+    report, err := s.generateNarrativeReport(ctx, networkData, findings, suspiciousPatterns, recommendations)
+    if err != nil {
+        log.Printf("Failed to generate narrative report: %v", err)
+        report = "Report generation failed, but analysis data is available above."
+    }
+    
+    // Build response
+    response := &models.NetworkAnalysisResponse{
+        RequestID:         requestID,
+        CenterEntity:      s.buildEntitySummary(networkData.CenterNode),
+        NetworkSummary:    networkSummary,
+        SuspicionScore:    suspicionScore,
+        RiskLevel:         riskLevel,
+        KeyFindings:       findings,
+        SuspiciousPatterns: suspiciousPatterns,
+        FinancialAnalysis: financialAnalysis,
+        Recommendations:   recommendations,
+        GeneratedReport:   report,
+        ProcessedAt:       time.Now(),
+        ProcessingTime:    time.Since(startTime),
+    }
+    
+    // Step 9: Save results if requested
+    if req.SaveResults {
+        err = s.saveAnalysisResults(response)
+        if err != nil {
+            log.Printf("Failed to save analysis results: %v", err)
+            // Don't fail the entire operation
+        }
+    }
+    
+    log.Printf("Network analysis completed in %v", time.Since(startTime))
+    return response, nil
+}
+
+// NetworkData represents the extracted network structure
+type NetworkData struct {
+    CenterNode    neo4j.Node
+    Nodes         []neo4j.Node
+    Relationships []neo4j.Relationship
+    Paths         []neo4j.Path
+}
+
+func (s *NetworkAnalysisService) extractNetworkData(req *models.NetworkAnalysisRequest) (*NetworkData, error) {
+    result, err := db.ExecuteRead(func(tx neo4j.Transaction) (interface{}, error) {
+        // Build the query based on filters
+        var nodeFilter, relFilter string
+        params := map[string]interface{}{
+            "centerNodeId": req.CenterNodeID,
+            "depth":        req.Depth,
+        }
+        
+        if len(req.EntityTypes) > 0 {
+            nodeFilter = "AND any(label in labels(n) WHERE label IN $entityTypes)"
+            params["entityTypes"] = req.EntityTypes
+        }
+        
+        if len(req.RelationshipTypes) > 0 {
+            relFilter = "AND type(r) IN $relationshipTypes"
+            params["relationshipTypes"] = req.RelationshipTypes
+        }
+        
+        query := fmt.Sprintf(`
+            MATCH (center) WHERE ID(center) = $centerNodeId
+            CALL {
+                WITH center
+                MATCH path = (center)-[*1..%d]-(n)
+                WHERE 1=1 %s
+                RETURN path
+                LIMIT 1000
+            }
+            WITH center, collect(path) as paths
+            UNWIND paths as path
+            UNWIND nodes(path) as node
+            UNWIND relationships(path) as rel
+            WITH center, paths,
+                 collect(DISTINCT node) as allNodes,
+                 collect(DISTINCT rel) as allRels
+            WHERE size([r in allRels WHERE 1=1 %s]) > 0 OR $relationshipTypes IS NULL
+            RETURN center, paths, allNodes, allRels
+        `, req.Depth, nodeFilter, relFilter)
+        
+        result, err := tx.Run(query, params)
+        if err != nil {
+            return nil, fmt.Errorf("failed to execute network query: %w", err)
+        }
+        
+        if !result.Next() {
+            return nil, fmt.Errorf("center node not found or no network data available")
+        }
+        
+        record := result.Record()
+        centerNode := record.Values[0].(neo4j.Node)
+        paths := record.Values[1].([]interface{})
+        nodes := record.Values[2].([]interface{})
+        relationships := record.Values[3].([]interface{})
+        
+        // Convert to proper types
+        networkData := &NetworkData{
+            CenterNode: centerNode,
+        }
+        
+        // Convert paths
+        for _, p := range paths {
+            if path, ok := p.(neo4j.Path); ok {
+                networkData.Paths = append(networkData.Paths, path)
+            }
+        }
+        
+        // Convert nodes
+        for _, n := range nodes {
+            if node, ok := n.(neo4j.Node); ok {
+                networkData.Nodes = append(networkData.Nodes, node)
+            }
+        }
+        
+        // Convert relationships
+        for _, r := range relationships {
+            if rel, ok := r.(neo4j.Relationship); ok {
+                networkData.Relationships = append(networkData.Relationships, rel)
+            }
+        }
+        
+        return networkData, nil
+    })
+    
+    if err != nil {
+        return nil, err
+    }
+    
+    return result.(*NetworkData), nil
+}
+
+func (s *NetworkAnalysisService) analyzeNetworkStructure(data *NetworkData) models.NetworkSummaryData {
+    nodeTypes := make(map[string]int)
+    relationshipTypes := make(map[string]int)
+    
+    // Count node types
+    for _, node := range data.Nodes {
+        if len(node.Labels) > 0 {
+            nodeTypes[node.Labels[0]]++
+        }
+    }
+    
+    // Count relationship types
+    for _, rel := range data.Relationships {
+        relationshipTypes[rel.Type]++
+    }
+    
+    // Calculate network metrics
+    nodeCount := len(data.Nodes)
+    relCount := len(data.Relationships)
+    
+    var networkDensity float64
+    if nodeCount > 1 {
+        maxPossibleEdges := nodeCount * (nodeCount - 1) / 2
+        networkDensity = float64(relCount) / float64(maxPossibleEdges)
+    }
+    
+    // Find influential entities (high connection count)
+    nodeConnections := make(map[int64]int)
+    for _, rel := range data.Relationships {
+        nodeConnections[rel.StartId]++
+        nodeConnections[rel.EndId]++
+    }
+    
+    var influential []models.InfluentialEntity
+    for _, node := range data.Nodes {
+        connections := nodeConnections[node.Id]
+        if connections > 5 { // Threshold for "influential"
+            influential = append(influential, models.InfluentialEntity{
+                ID:             fmt.Sprint(node.Id),
+                Name:           s.getNodeName(node),
+                Type:           s.getNodeType(node),
+                InfluenceScore: float64(connections) / float64(nodeCount),
+                Connections:    connections,
+            })
+        }
+    }
+    
+    // Sort by influence score
+    sort.Slice(influential, func(i, j int) bool {
+        return influential[i].InfluenceScore > influential[j].InfluenceScore
+    })
+    
+    return models.NetworkSummaryData{
+        TotalNodes:          nodeCount,
+        TotalRelationships:  relCount,
+        NodeTypeBreakdown:   nodeTypes,
+        RelationshipTypes:   relationshipTypes,
+        NetworkDensity:      networkDensity,
+        AveragePathLength:   s.calculateAveragePathLength(data),
+        ClusteringScore:     s.calculateClusteringScore(data),
+        InfluentialEntities: influential,
+    }
+}
+
+func (s *NetworkAnalysisService) detectSuspiciousPatterns(ctx context.Context, data *NetworkData, analysisType string) ([]models.SuspiciousPattern, error) {
+    var patterns []models.SuspiciousPattern
+    
+    // Pattern 1: Circular transaction patterns
+    circularPatterns := s.detectCircularTransactions(data)
+    patterns = append(patterns, circularPatterns...)
+    
+    // Pattern 2: Shell company indicators
+    if analysisType == "corruption" || analysisType == "all" {
+        shellPatterns := s.detectShellCompanyPatterns(data)
+        patterns = append(patterns, shellPatterns...)
+    }
+    
+    // Pattern 3: Rapid financial transfers
+    if analysisType == "financial" || analysisType == "all" {
+        rapidTransferPatterns := s.detectRapidTransfers(data)
+        patterns = append(patterns, rapidTransferPatterns...)
+    }
+    
+    // Pattern 4: Unusual relationship patterns (using AI)
+    aiPatterns, err := s.detectAIPatterns(ctx, data, analysisType)
+    if err != nil {
+        log.Printf("Failed to detect AI patterns: %v", err)
+    } else {
+        patterns = append(patterns, aiPatterns...)
+    }
+    
+    return patterns, nil
+}
+
+func (s *NetworkAnalysisService) detectCircularTransactions(data *NetworkData) []models.SuspiciousPattern {
+    var patterns []models.SuspiciousPattern
+    
+    // Look for paths that form cycles
+    for _, path := range data.Paths {
+        if len(path.Nodes) >= 3 {
+            start := path.Nodes[0]
+            end := path.Nodes[len(path.Nodes)-1]
+            
+            // Check if start and end are connected (forming a cycle)
+            for _, rel := range data.Relationships {
+                if (rel.StartId == end.Id && rel.EndId == start.Id) ||
+                   (rel.StartId == start.Id && rel.EndId == end.Id) {
+                    
+                    // Found a circular pattern
+                    var entities []string
+                    var transactions []models.TransactionSummary
+                    
+                    for _, node := range path.Nodes {
+                        entities = append(entities, fmt.Sprint(node.Id))
+                    }
+                    
+                    // Extract transaction details from relationships
+                    for _, pathRel := range path.Relationships {
+                        if amount, ok := pathRel.Props["amount"]; ok {
+                            if amountFloat, ok := amount.(float64); ok && amountFloat > 0 {
+                                transactions = append(transactions, models.TransactionSummary{
+                                    From:   fmt.Sprint(pathRel.StartId),
+                                    To:     fmt.Sprint(pathRel.EndId),
+                                    Amount: amountFloat,
+                                    Type:   pathRel.Type,
+                                })
+                            }
+                        }
+                    }
+                    
+                    if len(transactions) > 0 {
+                        patterns = append(patterns, models.SuspiciousPattern{
+                            PatternType:      "circular_transactions",
+                            Description:      "Circular transaction pattern detected - money flows in a loop",
+                            RiskScore:        0.8,
+                            EntitiesInvolved: entities,
+                            Transactions:     transactions,
+                            RedFlags:         []string{"circular_flow", "potential_laundering", "round_trip_transactions"},
+                        })
+                    }
+                }
+            }
+        }
+    }
+    
+    return patterns
+}
+
+func (s *NetworkAnalysisService) detectShellCompanyPatterns(data *NetworkData) []models.SuspiciousPattern {
+    var patterns []models.SuspiciousPattern
+    
+    for _, node := range data.Nodes {
+        if s.getNodeType(node) == "Organization" {
+            // Check for shell company indicators
+            var redFlags []string
+            score := 0.0
+            
+            // Limited business activity
+            connectionCount := 0
+            for _, rel := range data.Relationships {
+                if rel.StartId == node.Id || rel.EndId == node.Id {
+                    connectionCount++
+                }
+            }
+            
+            if connectionCount < 3 {
+                redFlags = append(redFlags, "minimal_business_connections")
+                score += 0.2
+            }
+            
+            // Check for offshore indicators
+            if name := s.getNodeName(node); strings.Contains(strings.ToLower(name), "ltd") ||
+               strings.Contains(strings.ToLower(name), "holdings") ||
+               strings.Contains(strings.ToLower(name), "investment") {
+                redFlags = append(redFlags, "typical_shell_company_naming")
+                score += 0.3
+            }
+            
+            // Check properties for shell company indicators
+            if props := node.Props; props != nil {
+                if location, ok := props["location"].(string); ok {
+                    knownOffshoreLocations := []string{"cayman", "bermuda", "panama", "british virgin", "delaware"}
+                    for _, offshore := range knownOffshoreLocations {
+                        if strings.Contains(strings.ToLower(location), offshore) {
+                            redFlags = append(redFlags, "offshore_jurisdiction")
+                            score += 0.4
+                            break
+                        }
+                    }
+                }
+                
+                if founded, ok := props["founded"]; ok {
+                    // Recently founded companies with high transaction volumes are suspicious
+                    if foundedStr, ok := founded.(string); ok && strings.Contains(foundedStr, "2023") {
+                        redFlags = append(redFlags, "recently_established")
+                        score += 0.2
+                    }
+                }
+            }
+            
+            if score > 0.5 {
+                patterns = append(patterns, models.SuspiciousPattern{
+                    PatternType:      "shell_company",
+                    Description:      fmt.Sprintf("Entity %s shows characteristics of a shell company", s.getNodeName(node)),
+                    RiskScore:        score,
+                    EntitiesInvolved: []string{fmt.Sprint(node.Id)},
+                    RedFlags:         redFlags,
+                })
+            }
+        }
+    }
+    
+    return patterns
+}
+
+func (s *NetworkAnalysisService) detectRapidTransfers(data *NetworkData) []models.SuspiciousPattern {
+    var patterns []models.SuspiciousPattern
+    
+    // Group relationships by time periods to detect rapid transfers
+    timeGroups := make(map[string][]neo4j.Relationship)
+    
+    for _, rel := range data.Relationships {
+        if dateStr, ok := rel.Props["date"].(string); ok {
+            // Group by day for rapid transfer detection
+            if len(dateStr) >= 10 {
+                day := dateStr[:10]
+                timeGroups[day] = append(timeGroups[day], rel)
+            }
+        }
+    }
+    
+    for day, rels := range timeGroups {
+        if len(rels) > 5 { // More than 5 transactions in one day
+            var totalAmount float64
+            var transactions []models.TransactionSummary
+            var entities []string
+            entitySet := make(map[string]bool)
+            
+            for _, rel := range rels {
+                if amount, ok := rel.Props["amount"].(float64); ok {
+                    totalAmount += amount
+                    transactions = append(transactions, models.TransactionSummary{
+                        From:   fmt.Sprint(rel.StartId),
+                        To:     fmt.Sprint(rel.EndId),
+                        Amount: amount,
+                        Type:   rel.Type,
+                    })
+                    
+                    entitySet[fmt.Sprint(rel.StartId)] = true
+                    entitySet[fmt.Sprint(rel.EndId)] = true
+                }
+            }
+            
+            for entity := range entitySet {
+                entities = append(entities, entity)
+            }
+            
+            if totalAmount > 100000 { // Threshold for suspicious rapid transfers
+                patterns = append(patterns, models.SuspiciousPattern{
+                    PatternType:      "rapid_transfers",
+                    Description:      fmt.Sprintf("High volume of transfers on %s: %d transactions totaling $%.2f", day, len(rels), totalAmount),
+                    RiskScore:        0.7,
+                    EntitiesInvolved: entities,
+                    Transactions:     transactions,
+                    RedFlags:         []string{"high_frequency_transfers", "same_day_transactions", "structuring_behavior"},
+                })
+            }
+        }
+    }
+    
+    return patterns
+}
+
+func (s *NetworkAnalysisService) detectAIPatterns(ctx context.Context, data *NetworkData, analysisType string) ([]models.SuspiciousPattern, error) {
+    // Use LLM to detect complex patterns that rule-based systems might miss
+    prompt, err := s.promptService.RenderPrompt("pattern_detection", map[string]interface{}{
+        "nodes":         s.summarizeNodesForAI(data.Nodes),
+        "relationships": s.summarizeRelationshipsForAI(data.Relationships),
+        "analysisType":  analysisType,
+    })
+    if err != nil {
+        return nil, fmt.Errorf("failed to render prompt: %w", err)
+    }
+    
+    messages := []llm.Message{
+        {
+            Role:    "system",
+            Content: "You are an expert financial crime investigator. Analyze network patterns to identify potential corruption, money laundering, or other suspicious activities.",
+        },
+        {
+            Role:    "user",
+            Content: prompt,
+        },
+    }
+    
+    result, err := s.llmClient.Generate(ctx, messages)
+    if err != nil {
+        return nil, fmt.Errorf("failed to analyze patterns with AI: %w", err)
+    }
+    
+    // Parse AI response
+    var aiPatterns struct {
+        Patterns []models.SuspiciousPattern `json:"patterns"`
+    }
+    
+    content := result.Choices[0].Message.Content
+    if err := json.Unmarshal([]byte(content), &aiPatterns); err != nil {
+        // If parsing fails, create a single pattern with the AI's analysis
+        return []models.SuspiciousPattern{
+            {
+                PatternType: "ai_analysis",
+                Description: "AI-detected suspicious pattern",
+                RiskScore:   0.6,
+                RedFlags:    []string{"ai_detected_anomaly"},
+            },
+        }, nil
+    }
+    
+    return aiPatterns.Patterns, nil
+}
+
+// Helper functions
+func (s *NetworkAnalysisService) getNodeName(node neo4j.Node) string {
+    if name, ok := node.Props["name"].(string); ok {
+        return name
+    }
+    return fmt.Sprintf("Node_%d", node.Id)
+}
+
+func (s *NetworkAnalysisService) getNodeType(node neo4j.Node) string {
+    if len(node.Labels) > 0 {
+        return node.Labels[0]
+    }
+    return "Unknown"
+}
+
+func (s *NetworkAnalysisService) calculateAveragePathLength(data *NetworkData) float64 {
+    if len(data.Paths) == 0 {
+        return 0
+    }
+    
+    totalLength := 0
+    for _, path := range data.Paths {
+        totalLength += len(path.Relationships)
+    }
+    
+    return float64(totalLength) / float64(len(data.Paths))
+}
+
+func (s *NetworkAnalysisService) calculateClusteringScore(data *NetworkData) float64 {
+    // Simplified clustering coefficient calculation
+    nodeConnections := make(map[int64][]int64)
+    
+    for _, rel := range data.Relationships {
+        nodeConnections[rel.StartId] = append(nodeConnections[rel.StartId], rel.EndId)
+        nodeConnections[rel.EndId] = append(nodeConnections[rel.EndId], rel.StartId)
+    }
+    
+    totalScore := 0.0
+    nodeCount := 0
+    
+    for nodeId, connections := range nodeConnections {
+        if len(connections) < 2 {
+            continue
+        }
+        
+        possibleTriangles := len(connections) * (len(connections) - 1) / 2
+        actualTriangles := 0
+        
+        // Count actual triangles
+        for i := 0; i < len(connections); i++ {
+            for j := i + 1; j < len(connections); j++ {
+                // Check if connections[i] and connections[j] are connected
+                for _, rel := range data.Relationships {
+                    if (rel.StartId == connections[i] && rel.EndId == connections[j]) ||
+                       (rel.StartId == connections[j] && rel.EndId == connections[i]) {
+                        actualTriangles++
+                        break
+                    }
+                }
+            }
+        }
+        
+        if possibleTriangles > 0 {
+            totalScore += float64(actualTriangles) / float64(possibleTriangles)
+            nodeCount++
+        }
+    }
+    
+    if nodeCount == 0 {
+        return 0
+    }
+    
+    return totalScore / float64(nodeCount)
+}
+
+func (s *NetworkAnalysisService) generateFindings(ctx context.Context, data *NetworkData, patterns []models.SuspiciousPattern, analysisType string) ([]models.Finding, error) {
+    // Use AI to generate detailed findings based on the network analysis
+    prompt, err := s.promptService.RenderPrompt("findings_generation", map[string]interface{}{
+        "centerNode":        s.getNodeName(data.CenterNode),
+        "networkSummary":    fmt.Sprintf("%d nodes, %d relationships", len(data.Nodes), len(data.Relationships)),
+        "suspiciousPatterns": patterns,
+        "analysisType":      analysisType,
+        "keyRelationships":  s.summarizeKeyRelationships(data),
+    })
+    if err != nil {
+        return nil, fmt.Errorf("failed to render findings prompt: %w", err)
+    }
+    
+    messages := []llm.Message{
+        {
+            Role:    "system",
+            Content: "You are a forensic analyst generating findings from network analysis. Create specific, actionable findings with evidence and confidence scores.",
+        },
+        {
+            Role:    "user",
+            Content: prompt,
+        },
+    }
+    
+    result, err := s.llmClient.Generate(ctx, messages)
+    if err != nil {
+        return nil, fmt.Errorf("failed to generate findings: %w", err)
+    }
+    
+    var findingsResponse struct {
+        Findings []models.Finding `json:"findings"`
+    }
+    
+    content := result.Choices[0].Message.Content
+    if err := json.Unmarshal([]byte(content), &findingsResponse); err != nil {
+        // Fallback: create basic findings from patterns
+        var findings []models.Finding
+        for i, pattern := range patterns {
+            findings = append(findings, models.Finding{
+                ID:          fmt.Sprintf("finding_%d", i+1),
+                Type:        "pattern_based",
+                Severity:    s.getSeverityFromScore(pattern.RiskScore),
+                Title:       fmt.Sprintf("Suspicious Pattern: %s", pattern.PatternType),
+                Description: pattern.Description,
+                Confidence:  pattern.RiskScore,
+                Entities:    pattern.EntitiesInvolved,
+                Evidence: []models.Evidence{
+                    {
+                        Type:        "pattern",
+                        Source:      "automated_analysis",
+                        Description: pattern.Description,
+                        Confidence:  pattern.RiskScore,
+                    },
+                },
+            })
+        }
+        return findings, nil
+    }
+    
+    return findingsResponse.Findings, nil
+}
+
+func (s *NetworkAnalysisService) calculateSuspicionScore(findings []models.Finding, patterns []models.SuspiciousPattern) float64 {
+    var totalScore float64
+    weightCount := 0
+    
+    // Score from findings
+    for _, finding := range findings {
+        weight := 1.0
+        if finding.Severity == "critical" {
+            weight = 3.0
+        } else if finding.Severity == "warning" {
+            weight = 2.0
+        }
+        
+        totalScore += finding.Confidence * weight
+        weightCount += int(weight)
+    }
+    
+    // Score from patterns
+    for _, pattern := range patterns {
+        totalScore += pattern.RiskScore
+        weightCount++
+    }
+    
+    if weightCount == 0 {
+        return 0
+    }
+    
+    score := totalScore / float64(weightCount)
+    return math.Min(score, 1.0)
+}
+
+func (s *NetworkAnalysisService) determineRiskLevel(suspicionScore float64) string {
+    if suspicionScore >= 0.8 {
+        return "CRITICAL"
+    } else if suspicionScore >= 0.6 {
+        return "HIGH"
+    } else if suspicionScore >= 0.4 {
+        return "MEDIUM"
+    }
+    return "LOW"
+}
+
+func (s *NetworkAnalysisService) performFinancialAnalysis(data *NetworkData) *models.FinancialAnalysisData {
+    var totalValue, maxTransaction, totalTransactions float64
+    var cashTransactions []models.TransactionSummary
+    transactionsByPeriod := make(map[string]int)
+    
+    for _, rel := range data.Relationships {
+        if amount, ok := rel.Props["amount"].(float64); ok && amount > 0 {
+            totalValue += amount
+            totalTransactions++
+            
+            if amount > maxTransaction {
+                maxTransaction = amount
+            }
+            
+            // Check for cash transactions
+            if transType, ok := rel.Props["type"].(string); ok && strings.ToLower(transType) == "cash" {
+                cashTransactions = append(cashTransactions, models.TransactionSummary{
+                    From:   fmt.Sprint(rel.StartId),
+                    To:     fmt.Sprint(rel.EndId),
+                    Amount: amount,
+                    Type:   transType,
+                })
+            }
+            
+            // Group by time period
+            if dateStr, ok := rel.Props["date"].(string); ok && len(dateStr) >= 7 {
+                month := dateStr[:7] // YYYY-MM
+                transactionsByPeriod[month]++
+            }
+        }
+    }
+    
+    averageTransaction := 0.0
+    if totalTransactions > 0 {
+        averageTransaction = totalValue / totalTransactions
+    }
+    
+    // Detect unusual patterns
+    var unusualPatterns []models.UnusualPattern
+    if averageTransaction > 50000 {
+        unusualPatterns = append(unusualPatterns, models.UnusualPattern{
+            Type:        "high_average_transaction",
+            Description: fmt.Sprintf("Average transaction amount of $%.2f is unusually high", averageTransaction),
+            Anomaly:     "large_transactions",
+            Score:       0.7,
+        })
+    }
+    
+    if len(cashTransactions) > 0 {
+        unusualPatterns = append(unusualPatterns, models.UnusualPattern{
+            Type:        "cash_transactions",
+            Description: fmt.Sprintf("Detected %d cash transactions", len(cashTransactions)),
+            Anomaly:     "cash_preference",
+            Score:       0.6,
+        })
+    }
+    
+    return &models.FinancialAnalysisData{
+        TotalTransactionValue: totalValue,
+        LargestTransaction:    maxTransaction,
+        AverageTransaction:    averageTransaction,
+        TransactionFrequency:  transactionsByPeriod,
+        UnusualPatterns:       unusualPatterns,
+        CashTransactions:      cashTransactions,
+    }
+}
+
+func (s *NetworkAnalysisService) generateRecommendations(ctx context.Context, findings []models.Finding, patterns []models.SuspiciousPattern, riskLevel string) ([]models.Recommendation, error) {
+    prompt, err := s.promptService.RenderPrompt("recommendations_generation", map[string]interface{}{
+        "findings":    findings,
+        "patterns":    patterns,
+        "riskLevel":   riskLevel,
+    })
+    if err != nil {
+        return nil, fmt.Errorf("failed to render recommendations prompt: %w", err)
+    }
+    
+    messages := []llm.Message{
+        {
+            Role:    "system",
+            Content: "You are a compliance expert generating actionable recommendations based on network analysis findings. Focus on practical, implementable actions.",
+        },
+        {
+            Role:    "user",
+            Content: prompt,
+        },
+    }
+    
+    result, err := s.llmClient.Generate(ctx, messages)
+    if err != nil {
+        return nil, fmt.Errorf("failed to generate recommendations: %w", err)
+    }
+    
+    var recommendationsResponse struct {
+        Recommendations []models.Recommendation `json:"recommendations"`
+    }
+    
+    content := result.Choices[0].Message.Content
+    if err := json.Unmarshal([]byte(content), &recommendationsResponse); err != nil {
+        // Fallback recommendations based on risk level
+        return s.getDefaultRecommendations(riskLevel), nil
+    }
+    
+    return recommendationsResponse.Recommendations, nil
+}
+
+func (s *NetworkAnalysisService) generateNarrativeReport(ctx context.Context, data *NetworkData, findings []models.Finding, patterns []models.SuspiciousPattern, recommendations []models.Recommendation) (string, error) {
+    prompt, err := s.promptService.RenderPrompt("narrative_report", map[string]interface{}{
+        "centerEntityName": s.getNodeName(data.CenterNode),
+        "networkSize":      fmt.Sprintf("%d entities and %d relationships", len(data.Nodes), len(data.Relationships)),
+        "findings":         findings,
+        "patterns":         patterns,
+        "recommendations":  recommendations,
+    })
+    if err != nil {
+        return "", fmt.Errorf("failed to render narrative prompt: %w", err)
+    }
+    
+    messages := []llm.Message{
+        {
+            Role:    "system",
+            Content: "You are a senior investigative analyst writing a comprehensive report. Create a clear, professional narrative that summarizes the analysis and its implications.",
+        },
+        {
+            Role:    "user",
+            Content: prompt,
+        },
+    }
+    
+    result, err := s.llmClient.Generate(ctx, messages)
+    if err != nil {
+        return "", fmt.Errorf("failed to generate narrative report: %w", err)
+    }
+    
+    return result.Choices[0].Message.Content, nil
+}
+
+// Helper functions
+func (s *NetworkAnalysisService) buildEntitySummary(centerNode neo4j.Node) models.EntitySummary {
+    var roles []string
+    var aliases []string
+    
+    if props := centerNode.Props; props != nil {
+        if role, ok := props["role"].(string); ok {
+            roles = append(roles, role)
+        }
+        if rolesArray, ok := props["roles"].([]interface{}); ok {
+            for _, r := range rolesArray {
+                if roleStr, ok := r.(string); ok {
+                    roles = append(roles, roleStr)
+                }
+            }
+        }
+        if aliasesArray, ok := props["aliases"].([]interface{}); ok {
+            for _, a := range aliasesArray {
+                if aliasStr, ok := a.(string); ok {
+                    aliases = append(aliases, aliasStr)
+                }
+            }
+        }
+    }
+    
+    return models.EntitySummary{
+        ID:           fmt.Sprint(centerNode.Id),
+        Name:         s.getNodeName(centerNode),
+        Type:         s.getNodeType(centerNode),
+        Properties:   centerNode.Props,
+        Roles:        roles,
+        KnownAliases: aliases,
+    }
+}
+
+func (s *NetworkAnalysisService) getSeverityFromScore(score float64) string {
+    if score >= 0.8 {
+        return "critical"
+    } else if score >= 0.5 {
+        return "warning"
+    }
+    return "info"
+}
+
+func (s *NetworkAnalysisService) summarizeKeyRelationships(data *NetworkData) []string {
+    var summary []string
+    relTypes := make(map[string]int)
+    
+    for _, rel := range data.Relationships {
+        relTypes[rel.Type]++
+    }
+    
+    for relType, count := range relTypes {
+        summary = append(summary, fmt.Sprintf("%d %s relationships", count, relType))
+    }
+    
+    return summary
+}
+
+func (s *NetworkAnalysisService) summarizeNodesForAI(nodes []neo4j.Node) string {
+    var summary []string
+    for i, node := range nodes {
+        if i > 20 { // Limit for AI processing
+            summary = append(summary, "... and more")
+            break
+        }
+        summary = append(summary, fmt.Sprintf("%s (%s): %s", s.getNodeName(node), s.getNodeType(node), fmt.Sprint(node.Id)))
+    }
+    return strings.Join(summary, "\n")
+}
+
+func (s *NetworkAnalysisService) summarizeRelationshipsForAI(relationships []neo4j.Relationship) string {
+    var summary []string
+    for i, rel := range relationships {
+        if i > 30 { // Limit for AI processing
+            summary = append(summary, "... and more")
+            break
+        }
+        
+        var amount string
+        if amt, ok := rel.Props["amount"].(float64); ok {
+            amount = fmt.Sprintf(" ($%.2f)", amt)
+        }
+        
+        summary = append(summary, fmt.Sprintf("%s -[%s]-> %s%s", 
+            fmt.Sprint(rel.StartId), rel.Type, fmt.Sprint(rel.EndId), amount))
+    }
+    return strings.Join(summary, "\n")
+}
+
+func (s *NetworkAnalysisService) getDefaultRecommendations(riskLevel string) []models.Recommendation {
+    switch riskLevel {
+    case "CRITICAL":
+        return []models.Recommendation{
+            {
+                Priority:      "high",
+                Category:      "investigation",
+                Action:        "Immediate Investigation Required",
+                Description:   "Critical risk indicators detected. Begin formal investigation immediately.",
+                Justification: "Multiple high-risk patterns identified with high confidence scores.",
+                NextSteps:     []string{"Assign investigation team", "Freeze related accounts", "Gather additional evidence"},
+                Timeline:      "immediate",
+            },
+        }
+    case "HIGH":
+        return []models.Recommendation{
+            {
+                Priority:      "high",
+                Category:      "monitoring",
+                Action:        "Enhanced Monitoring",
+                Description:   "Implement enhanced monitoring and periodic review.",
+                Justification: "Significant risk indicators warrant closer scrutiny.",
+                NextSteps:     []string{"Set up automated alerts", "Schedule monthly reviews", "Request additional documentation"},
+                Timeline:      "short_term",
+            },
+        }
+    default:
+        return []models.Recommendation{
+            {
+                Priority:      "medium",
+                Category:      "compliance",
+                Action:        "Standard Monitoring",
+                Description:   "Continue standard monitoring procedures.",
+                Justification: "Low to moderate risk levels identified.",
+                NextSteps:     []string{"Maintain current monitoring", "Review quarterly"},
+                Timeline:      "long_term",
+            },
+        }
+    }
+}
+
+func (s *NetworkAnalysisService) saveAnalysisResults(response *models.NetworkAnalysisResponse) error {
+    // Save to Neo4j as a separate analysis node
+    _, err := db.ExecuteWrite(func(tx neo4j.Transaction) (interface{}, error) {
+        query := `
+            CREATE (analysis:NetworkAnalysis {
+                requestId: $requestId,
+                centerNodeId: $centerNodeId,
+                suspicionScore: $suspicionScore,
+                riskLevel: $riskLevel,
+                processedAt: datetime($processedAt),
+                processingTime: $processingTime,
+                findingsCount: $findingsCount,
+                patternsCount: $patternsCount,
+                reportSummary: $reportSummary
+            })
+            WITH analysis
+            MATCH (center) WHERE ID(center) = $centerNodeIdInt
+            CREATE (analysis)-[:ANALYZED]->(center)
+            RETURN analysis
+        `
+        
+        params := map[string]interface{}{
+            "requestId":       response.RequestID,
+            "centerNodeId":    response.CenterEntity.ID,
+            "centerNodeIdInt": response.CenterEntity.ID, // Assuming this converts properly
+            "suspicionScore":  response.SuspicionScore,
+            "riskLevel":       response.RiskLevel,
+            "processedAt":     response.ProcessedAt.Format(time.RFC3339),
+            "processingTime":  response.ProcessingTime.Seconds(),
+            "findingsCount":   len(response.KeyFindings),
+            "patternsCount":   len(response.SuspiciousPatterns),
+            "reportSummary":   response.GeneratedReport[:min(500, len(response.GeneratedReport))], // Truncate for storage
+        }
+        
+        result, err := tx.Run(query, params)
+        if err != nil {
+            return nil, err
+        }
+        
+        return result.Consume()
+    })
+    
+    return err
+}
+
+func min(a, b int) int {
+    if a < b {
+        return a
+    }
+    return b
+}
+```
+
+## Step 3: Create MCP Prompts
+
+Now let's create the prompt templates for our AI-powered analysis.
+
+### Create `internal/mcp/network_prompts.go`
+
+```go
+package mcp
+
+// Network analysis specific prompts
+const (
+    PatternDetectionPrompt = `
+Analyze this network data to identify suspicious patterns that might indicate corruption, money laundering, or other financial crimes.
+
+Network Overview:
+Nodes: {{.nodes}}
+
+Relationships: {{.relationships}}
+
+Analysis Type: {{.analysisType}}
+
+Instructions:
+1. Look for patterns like:
+   - Circular transactions
+   - Shell company indicators  
+   - Structuring behavior
+   - Unusual transaction timing
+   - Geographic anomalies
+   - Relationship clustering
+
+2. For each suspicious pattern found, provide:
+   - Pattern type
+   - Risk score (0.0-1.0)
+   - Entities involved
+   - Specific red flags
+   - Brief description
+
+3. Focus on patterns that are specific to {{.analysisType}} analysis
+
+Return ONLY valid JSON in this format:
+{
+  "patterns": [
+    {
+      "pattern_type": "string",
+      "description": "detailed description",
+      "risk_score": 0.0-1.0,
+      "entities_involved": ["entity1", "entity2"],
+      "red_flags": ["flag1", "flag2"],
+      "transactions": [
+        {
+          "from": "entity_id",
+          "to": "entity_id", 
+          "amount": 0.0,
+          "type": "transaction_type"
+        }
+      ]
+    }
+  ]
+}
+`
+
+    FindingsGenerationPrompt = `
+Based on the network analysis of {{.centerNode}}, generate detailed investigative findings.
+
+Network Summary: {{.networkSummary}}
+Key Relationships: {{.keyRelationships}}
+Suspicious Patterns Found: {{.suspiciousPatterns}}
+Analysis Focus: {{.analysisType}}
+
+Generate specific findings with:
+1. Clear titles and descriptions
+2. Evidence supporting each finding
+3. Confidence scores (0.0-1.0)
+4. Severity levels (info/warning/critical)
+5. Related entities
+
+Each finding should be actionable and based on concrete evidence from the network data.
+
+Return ONLY valid JSON:
+{
+  "findings": [
+    {
+      "id": "finding_1",
+      "type": "financial|regulatory|behavioral",
+      "severity": "info|warning|critical",
+      "title": "Clear, specific title",
+      "description": "Detailed description of the finding",
+      "confidence": 0.0-1.0,
+      "entities": ["entity_id1", "entity_id2"],
+      "evidence": [
+        {
+          "type": "relationship|property|pattern",
+          "source": "graph_database|ai_analysis",
+          "description": "What supports this finding",
+          "confidence": 0.0-1.0
+        }
+      ]
+    }
+  ]
+}
+`
+
+    RecommendationsGenerationPrompt = `
+Generate actionable recommendations based on these analysis results:
+
+Risk Level: {{.riskLevel}}
+Key Findings: {{.findings}}
+Suspicious Patterns: {{.patterns}}
+
+Create specific, implementable recommendations including:
+1. Immediate actions needed
+2. Medium-term monitoring steps  
+3. Long-term compliance measures
+4. Investigation priorities
+5. Resource requirements
+
+Focus on practical steps that can be taken by compliance teams, investigators, or management.
+
+Return ONLY valid JSON:
+{
+  "recommendations": [
+    {
+      "priority": "high|medium|low",
+      "category": "investigation|compliance|monitoring|reporting",
+      "action": "Clear action title",
+      "description": "Detailed description of the recommended action",
+      "justification": "Why this action is needed",
+      "next_steps": ["step1", "step2", "step3"],
+      "timeline": "immediate|short_term|long_term"
+    }
+  ]
+}
+`
+
+    NarrativeReportPrompt = `
+Write a comprehensive investigative report analyzing the network centered on {{.centerEntityName}}.
+
+Network Overview: {{.networkSize}}
+Key Findings: {{.findings}}
+Suspicious Patterns: {{.patterns}}
+Recommendations: {{.recommendations}}
+
+Structure the report with:
+1. Executive Summary
+2. Network Overview
+3. Key Findings
+4. Risk Assessment
+5. Suspicious Activity Summary
+6. Recommendations
+7. Conclusion
+
+Write in a professional, analytical tone suitable for investigators, compliance officers, or management review.
+Focus on facts, evidence, and actionable insights.
+Include specific details about relationships, transactions, and risk indicators.
+Keep the report concise but comprehensive (aim for 800-1200 words).
+
+Do not include any JSON formatting - write as a continuous narrative report.
+`
+)
+
+// Update the PromptService to include network analysis prompts
+func (ps *PromptService) registerNetworkPrompts() {
+    ps.templates["pattern_detection"] = template.Must(template.New("pattern_detection").Parse(PatternDetectionPrompt))
+    ps.templates["findings_generation"] = template.Must(template.New("findings_generation").Parse(FindingsGenerationPrompt))
+    ps.templates["recommendations_generation"] = template.Must(template.New("recommendations_generation").Parse(RecommendationsGenerationPrompt))
+    ps.templates["narrative_report"] = template.Must(template.New("narrative_report").Parse(NarrativeReportPrompt))
+}
+```
+
+### Update `internal/mcp/prompt_service.go`
+
+```go
+func NewPromptService() *PromptService {
+    ps := &PromptService{
+        templates: make(map[string]*template.Template),
+    }
+    
+    // Register existing templates
+    ps.templates["entity_extraction"] = template.Must(template.New("entity_extraction").Parse(EntityExtractionPrompt))
+    ps.templates["relationship_analysis"] = template.Must(template.New("relationship_analysis").Parse(RelationshipAnalysisPrompt))
+    ps.templates["corruption_analysis"] = template.Must(template.New("corruption_analysis").Parse(CorruptionAnalysisPrompt))
+    
+    // Register network analysis prompts
+    ps.registerNetworkPrompts()
+    
+    return ps
+}
+```
+
+## Step 4: Create MCP Tools
+
+Now let's create MCP tools that can be called by the LLM during conversations.
+
+### Update `internal/mcp/tools.go`
+
+```go
+package mcp
+
+import (
+    "context"
+    "encoding/json"
+    "fmt"
+    "clank/config"
+    "clank/internal/llm"
+    "clank/internal/models"
+    "clank/internal/services"
+    "github.com/modelcontextprotocol/go-sdk/mcp"
+)
+
+type MCPToolsService struct {
+    llmClient            *llm.Client
+    networkAnalysisService *services.NetworkAnalysisService
+}
+
+func NewMCPToolsService(cfg *config.Config) *MCPToolsService {
+    llmClient := llm.NewClient(cfg)
+    return &MCPToolsService{
+        llmClient:              llmClient,
+        networkAnalysisService: services.NewNetworkAnalysisService(llmClient),
+    }
+}
+
+// RegisterNetworkAnalysisTools registers all network analysis MCP tools
+func (ts *MCPToolsService) RegisterNetworkAnalysisTools(server *mcp.Server) {
+    // Tool 1: Full network analysis
+    server.RegisterTool(&mcp.Tool{
+        Name:        "analyze_network",
+        Description: "Perform comprehensive network analysis to detect suspicious patterns and corruption indicators",
+        InputSchema: map[string]interface{}{
+            "type": "object",
+            "properties": map[string]interface{}{
+                "center_node_id": {
+                    "type":        "string",
+                    "description": "ID of the central entity to analyze around",
+                },
+                "depth": {
+                    "type":        "integer",
+                    "description": "Analysis depth (number of hops from center node)",
+                    "default":     3,
+                    "minimum":     1,
+                    "maximum":     5,
+                },
+                "analysis_type": {
+                    "type":        "string",
+                    "enum":        []string{"corruption", "financial", "influence", "all"},
+                    "description": "Type of analysis to perform",
+                    "default":     "all",
+                },
+                "include_recommendations": {
+                    "type":        "boolean",
+                    "description": "Whether to generate actionable recommendations",
+                    "default":     true,
+                },
+                "save_results": {
+                    "type":        "boolean", 
+                    "description": "Whether to save analysis results to database",
+                    "default":     false,
+                },
+            },
+            "required": []string{"center_node_id"},
+        },
+    }, ts.handleNetworkAnalysis)
+
+    // Tool 2: Pattern detection only
+    server.RegisterTool(&mcp.Tool{
+        Name:        "detect_suspicious_patterns",
+        Description: "Detect suspicious patterns in a network without full analysis",
+        InputSchema: map[string]interface{}{
+            "type": "object",
+            "properties": map[string]interface{}{
+                "center_node_id": {
+                    "type":        "string",
+                    "description": "ID of the central entity",
+                },
+                "pattern_types": {
+                    "type": "array",
+                    "items": {
+                        "type": "string",
+                        "enum": []string{"circular_transactions", "shell_company", "rapid_transfers", "all"},
+                    },
+                    "description": "Specific patterns to detect",
+                    "default":     ["all"],
+                },
+                "depth": {
+                    "type":    "integer",
+                    "default": 2,
+                    "minimum": 1,
+                    "maximum": 4,
+                },
+            },
+            "required": []string{"center_node_id"},
+        },
+    }, ts.handlePatternDetection)
+
+    // Tool 3: Risk assessment
+    server.RegisterTool(&mcp.Tool{
+        Name:        "assess_entity_risk",
+        Description: "Assess the risk level of a specific entity based on its network connections",
+        InputSchema: map[string]interface{}{
+            "type": "object",
+            "properties": map[string]interface{}{
+                "entity_id": {
+                    "type":        "string",
+                    "description": "ID of the entity to assess",
+                },
+                "risk_factors": {
+                    "type": "array",
+                    "items": {
+                        "type": "string",
+                        "enum": []string{"financial", "regulatory", "reputational", "operational"},
+                    },
+                    "description": "Risk factors to evaluate",
+                    "default":     ["financial", "regulatory"],
+                },
+            },
+            "required": []string{"entity_id"},
+        },
+    }, ts.handleRiskAssessment)
+
+    // Tool 4: Generate investigation report
+    server.RegisterTool(&mcp.Tool{
+        Name:        "generate_investigation_report",
+        Description: "Generate a detailed investigation report for an entity and its network",
+        InputSchema: map[string]interface{}{
+            "type": "object",
+            "properties": map[string]interface{}{
+                "entity_id": {
+                    "type":        "string",
+                    "description": "ID of the primary entity under investigation",
+                },
+                "report_type": {
+                    "type":        "string",
+                    "enum":        []string{"executive_summary", "detailed_analysis", "compliance_report"},
+                    "description": "Type of report to generate",
+                    "default":     "detailed_analysis",
+                },
+                "include_recommendations": {
+                    "type":    "boolean",
+                    "default": true,
+                },
+            },
+            "required": []string{"entity_id"},
+        },
+    }, ts.handleReportGeneration)
+}
+
+// Tool handlers
+func (ts *MCPToolsService) handleNetworkAnalysis(ctx context.Context, params map[string]interface{}) (interface{}, error) {
+    centerNodeID := params["center_node_id"].(string)
+    
+    // Build request from parameters
+    req := &models.NetworkAnalysisRequest{
+        CenterNodeID: centerNodeID,
+        AnalysisType: "all",
+        IncludeRecommendations: true,
+        SaveResults: false,
+    }
+    
+    // Set optional parameters
+    if depth, ok := params["depth"].(float64); ok {
+        req.Depth = int(depth)
+    }
+    if analysisType, ok := params["analysis_type"].(string); ok {
+        req.AnalysisType = analysisType
+    }
+    if includeRecs, ok := params["include_recommendations"].(bool); ok {
+        req.IncludeRecommendations = includeRecs
+    }
+    if saveResults, ok := params["save_results"].(bool); ok {
+        req.SaveResults = saveResults
+    }
+    
+    // Perform analysis
+    result, err := ts.networkAnalysisService.AnalyzeNetwork(ctx, req)
+    if err != nil {
+        return nil, fmt.Errorf("network analysis failed: %w", err)
+    }
+    
+    // Return a summary suitable for MCP response
+    return map[string]interface{}{
+        "analysis_id":     result.RequestID,
+        "center_entity":   result.CenterEntity.Name,
+        "risk_level":      result.RiskLevel,
+        "suspicion_score": result.SuspicionScore,
+        "findings_count":  len(result.KeyFindings),
+        "patterns_count":  len(result.SuspiciousPatterns),
+        "key_findings":    result.KeyFindings[:min(3, len(result.KeyFindings))], // Top 3 findings
+        "top_patterns":    result.SuspiciousPatterns[:min(2, len(result.SuspiciousPatterns))], // Top 2 patterns
+        "recommendations": result.Recommendations[:min(3, len(result.Recommendations))], // Top 3 recommendations
+        "executive_summary": ts.generateExecutiveSummary(result),
+    }, nil
+}
+
+func (ts *MCPToolsService) handlePatternDetection(ctx context.Context, params map[string]interface{}) (interface{}, error) {
+    centerNodeID := params["center_node_id"].(string)
+    
+    req := &models.NetworkAnalysisRequest{
+        CenterNodeID: centerNodeID,
+        Depth:        2,
+        AnalysisType: "corruption",
+    }
+    
+    if depth, ok := params["depth"].(float64); ok {
+        req.Depth = int(depth)
+    }
+    
+    // We'll use the network analysis service but focus only on pattern detection
+    result, err := ts.networkAnalysisService.AnalyzeNetwork(ctx, req)

@@ -57,7 +57,7 @@ services:
         target: /models
     command: >
       -s -m /models/CodeLlama-7b-Instruct-hf.Q6_K.gguf 
-      -ngl 25 
+      -ngl 20 
       --port 8090 
       --host 0.0.0.0
     deploy:

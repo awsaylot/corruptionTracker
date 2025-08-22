@@ -25,11 +25,26 @@ type Client struct {
 
 // NewClient creates a new LLM client with the given configuration
 func NewClient(cfg *config.Config) *Client {
+	// Use a longer timeout for LLM requests, or fall back to 2 minutes if not configured
+	timeout := cfg.LLM.Timeout
+	if timeout <= 6000*time.Second {
+		timeout = 10 * time.Minute
+		log.Printf("[LLM] Using extended timeout of %v for LLM requests", timeout)
+	}
+
 	return &Client{
 		url:     cfg.LLM.URL,
 		model:   cfg.LLM.Model,
-		timeout: cfg.LLM.Timeout,
-		http:    &http.Client{Timeout: cfg.LLM.Timeout},
+		timeout: timeout,
+		http: &http.Client{
+			Timeout: timeout,
+			Transport: &http.Transport{
+				MaxIdleConns:          10,
+				IdleConnTimeout:       6000 * time.Second,
+				DisableCompression:    false,
+				ResponseHeaderTimeout: 6000 * time.Second,
+			},
+		},
 	}
 }
 
@@ -70,14 +85,17 @@ type SSEResponse struct {
 
 // GenerateStream sends a request to llama.cpp and streams the response chunks through the provided channel
 func (c *Client) GenerateStream(ctx context.Context, messages []Message, responseChan chan<- string) error {
-	defer close(responseChan)
+	// Apply chat template
+	formattedMessages, err := c.applyChatTemplate(messages)
+	if err != nil {
+		return fmt.Errorf("failed to apply chat template: %w", err)
+	}
 
-	log.Printf("Sending request to llama.cpp at %s", c.url)
+	log.Printf("[GenerateStream] Sending request to llama.cpp at %s", c.url)
 
-	// Create HTTP request for llama.cpp's OpenAI-compatible API
 	llmReq := GenerateRequest{
 		Model:    c.model,
-		Messages: messages,
+		Messages: formattedMessages,
 		Stream:   true,
 	}
 
@@ -86,94 +104,122 @@ func (c *Client) GenerateStream(ctx context.Context, messages []Message, respons
 		return fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	log.Printf("Request payload: %s", string(jsonBody))
-
 	httpReq, err := http.NewRequestWithContext(ctx, "POST", c.url+"/v1/chat/completions", bytes.NewBuffer(jsonBody))
 	if err != nil {
 		return fmt.Errorf("failed to create request: %w", err)
 	}
-
 	httpReq.Header.Set("Content-Type", "application/json")
 	httpReq.Header.Set("Accept", "text/event-stream")
 
 	resp, err := c.http.Do(httpReq)
 	if err != nil {
-		return fmt.Errorf("failed to send request to llama.cpp: %w", err)
+		return fmt.Errorf("failed to send request: %w", err)
 	}
 	defer resp.Body.Close()
 
-	log.Printf("llama.cpp response status: %d", resp.StatusCode)
-
 	if resp.StatusCode != http.StatusOK {
-		// Read error response body for debugging
 		body, _ := io.ReadAll(resp.Body)
 		return fmt.Errorf("llama.cpp returned status %d: %s", resp.StatusCode, string(body))
 	}
 
-	// Read the streaming response from llama.cpp
 	scanner := bufio.NewScanner(resp.Body)
-	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
+	var buffer strings.Builder
+	const flushInterval = 100 // chars
 
-		// Skip empty lines and comments
+	// Helper function to safely send to channel
+	safeSend := func(content string) error {
+		select {
+		case responseChan <- content:
+			return nil
+		case <-ctx.Done():
+			log.Printf("[GenerateStream] context canceled during send: %v", ctx.Err())
+			return ctx.Err()
+		}
+	}
+
+	for scanner.Scan() {
+		select {
+		case <-ctx.Done():
+			log.Printf("[GenerateStream] context canceled: %v", ctx.Err())
+			return ctx.Err()
+		default:
+		}
+
+		line := strings.TrimSpace(scanner.Text())
 		if line == "" || strings.HasPrefix(line, ":") {
 			continue
 		}
 
-		log.Printf("Received line from llama.cpp: %s", line)
-
-		// Handle SSE format
 		if strings.HasPrefix(line, "data: ") {
 			data := strings.TrimPrefix(line, "data: ")
 
-			// Check for end of stream
 			if data == "[DONE]" {
-				log.Printf("llama.cpp stream completed")
+				log.Printf("[GenerateStream] stream ended: [DONE]")
 				break
 			}
 
-			// Try to parse as JSON (OpenAI format)
 			var streamResp SSEResponse
 			if err := json.Unmarshal([]byte(data), &streamResp); err != nil {
-				log.Printf("Failed to parse JSON from llama.cpp, treating as plain text: %v", err)
-				// If not JSON, treat as plain text (fallback)
+				// Handle non-JSON data (sometimes llama.cpp sends raw text)
 				if data != "" {
-					select {
-					case responseChan <- data:
-					case <-ctx.Done():
-						return ctx.Err()
+					buffer.WriteString(data)
+					if buffer.Len() >= flushInterval {
+						if err := safeSend(buffer.String()); err != nil {
+							return err
+						}
+						buffer.Reset()
 					}
 				}
 				continue
 			}
 
-			// Extract content from OpenAI-compatible response
 			if len(streamResp.Choices) > 0 {
 				choice := streamResp.Choices[0]
 				if choice.Delta.Content != "" {
-					log.Printf("Sending chunk to frontend: %s", choice.Delta.Content)
-					select {
-					case responseChan <- choice.Delta.Content:
-					case <-ctx.Done():
-						return ctx.Err()
+					buffer.WriteString(choice.Delta.Content)
+					if buffer.Len() >= flushInterval {
+						if err := safeSend(buffer.String()); err != nil {
+							return err
+						}
+						buffer.Reset()
 					}
 				}
 
-				// Check if stream is finished
-				if choice.FinishReason != "" {
-					log.Printf("llama.cpp stream finished: %s", choice.FinishReason)
+				if choice.FinishReason != "" && choice.FinishReason != "null" {
+					log.Printf("[GenerateStream] stream finished: %s", choice.FinishReason)
 					break
 				}
 			}
 		}
 	}
 
+	// Flush remaining content
+	if buffer.Len() > 0 {
+		if err := safeSend(buffer.String()); err != nil {
+			return err
+		}
+		buffer.Reset()
+	}
+
 	if err := scanner.Err(); err != nil {
+		// Don't treat context cancellation as an error
+		if ctx.Err() != nil {
+			log.Printf("[GenerateStream] context canceled, scanner stopped: %v", ctx.Err())
+			return ctx.Err()
+		}
+		log.Printf("[GenerateStream] scanner error: %v", err)
 		return fmt.Errorf("error reading from llama.cpp stream: %w", err)
 	}
 
-	log.Printf("Successfully processed llama.cpp stream")
+	log.Printf("[GenerateStream] successfully processed stream")
 	return nil
+}
+
+// applyChatTemplate applies the main chat template to messages
+func (c *Client) applyChatTemplate(messages []Message) ([]Message, error) {
+	// Insert system message handling / role alternation checks here
+	// For simplicity, this could just return messages as-is if system message is already handled
+	return messages, nil
 }
 
 // Generate generates a non-streaming response from llama.cpp
