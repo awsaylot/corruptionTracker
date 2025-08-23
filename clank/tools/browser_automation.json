@@ -1,9 +1,9 @@
 {
   "name": "browser_automation",
-  "description": "Enhanced browser automation tool with comprehensive web interaction capabilities. Supports Firefox and Chrome, article extraction, screenshots, form filling, element interaction, JavaScript execution, and much more.",
+  "description": "Enhanced browser automation tool with comprehensive web interaction capabilities. Supports Firefox, Chrome, and WebKit, article extraction, form filling, element interaction, JavaScript execution, and much more.",
   "arguments": {
     "url": { "type": "string", "required": true, "description": "The full URL of the page to navigate to, e.g., https://example.com" },
-    "browser": { "type": "string", "required": false, "description": "Browser to use: 'firefox' or 'chrome'. Default: 'firefox'" },
+    "browser": { "type": "string", "required": false, "description": "Browser to use: 'firefox', 'chrome', 'chromium', 'webkit', or 'safari'. Default: 'firefox'" },
     "headless": { "type": "boolean", "required": false, "description": "Run browser in headless mode. Default: true" },
     "user_agent": { "type": "string", "required": false, "description": "Custom user agent string to use for requests" },
     "window_size": { "type": "string", "required": false, "description": "Browser window size as 'width,height'. Default: '1920,1080'" },
@@ -13,7 +13,6 @@
     "disable_css": { "type": "boolean", "required": false, "description": "Disable CSS loading. Default: false" },
     "proxy_url": { "type": "string", "required": false, "description": "Proxy server URL for requests" },
     "extract_article": { "type": "boolean", "required": false, "description": "Extract main article text. Default: false" },
-    "take_screenshot": { "type": "boolean", "required": false, "description": "Capture a screenshot. Returns base64. Default: false" },
     "execute_js": { "type": "string", "required": false, "description": "JavaScript code to execute on the page" },
     "wait_for_element": { "type": "string", "required": false, "description": "CSS selector of element to wait for (10s timeout)" },
     "click_element": { "type": "string", "required": false, "description": "CSS selector of element to click" },

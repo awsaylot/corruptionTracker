@@ -1,0 +1,24 @@
+{
+  "name": "get_prompts",
+  "description": "Get all available prompts or retrieve a specific prompt by name. Returns prompt details including name, description, and full text content.",
+  "arguments": {
+    "name": {
+      "type": "string",
+      "required": false,
+      "description": "Optional prompt name to fetch a specific prompt. If not provided, returns all available prompts."
+    }
+  },
+  "handler": "get_prompts",
+  "examples": [
+    {
+      "description": "Get all available prompts",
+      "arguments": {}
+    },
+    {
+      "description": "Get a specific prompt by name",
+      "arguments": {
+        "name": "error_debug"
+      }
+    }
+  ]
+}

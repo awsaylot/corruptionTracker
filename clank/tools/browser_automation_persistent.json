@@ -1,0 +1,33 @@
+{
+  "name": "browser_automation_persistent",
+  "description": "Enhanced persistent browser automation tool with session management. Sessions remain open between calls until explicitly closed. Supports Firefox and Chrome, article extraction, screenshots, form filling, element interaction, JavaScript execution, and much more.",
+  "arguments": {
+    "session_id": { "type": "string", "required": false, "description": "Browser session ID. Defaults to 'default'. Sessions persist between calls." },
+    "session_command": { "type": "string", "required": false, "description": "Session management command: 'close' (close specific session), 'list' (list active sessions), 'close_all' (close all sessions)", "enum": ["close", "list", "close_all"] },
+    "url": { "type": "string", "required": false, "description": "The full URL of the page to navigate to (optional if using existing session)" },
+    "browser": { "type": "string", "required": false, "description": "Browser to use: 'firefox' or 'chrome'. Default: 'firefox'" },
+    "headless": { "type": "boolean", "required": false, "description": "Run browser in headless mode. Default: true" },
+    "window_size": { "type": "string", "required": false, "description": "Browser window size as 'width,height'. Default: '1920,1080'" },
+    "implicit_wait": { "type": "number", "required": false, "description": "Implicit wait timeout in seconds. Default: 10" },
+    "page_load_wait": { "type": "number", "required": false, "description": "Additional wait after page load in seconds. Default: 2" },
+    "user_agent": { "type": "string", "required": false, "description": "Custom user agent string to use for requests" },
+    "disable_images": { "type": "boolean", "required": false, "description": "Disable image loading. Default: false" },
+    "disable_css": { "type": "boolean", "required": false, "description": "Disable CSS loading. Default: false" },
+    "proxy_url": { "type": "string", "required": false, "description": "Proxy server URL for requests" },
+    
+    "extract_article": { "type": "boolean", "required": false, "description": "Extract main article text. Default: false" },
+    "take_screenshot": { "type": "boolean", "required": false, "description": "Capture a screenshot. Returns base64. Default: false" },
+    "execute_js": { "type": "string", "required": false, "description": "JavaScript code to execute on the page" },
+    "wait_for_element": { "type": "string", "required": false, "description": "CSS selector of element to wait for (10s timeout)" },
+    "click_element": { "type": "string", "required": false, "description": "CSS selector of element to click" },
+    "type_selector": { "type": "string", "required": false, "description": "CSS selector of element to type into (used with type_text)" },
+    "type_text": { "type": "string", "required": false, "description": "Text to type into an element (requires type_selector)" },
+    "scroll_to": { "type": "string", "required": false, "description": "Scroll target: 'top', 'bottom', or CSS selector" },
+    
+    "set_cookies": { "type": "string", "required": false, "description": "Cookies to set before navigation: 'name1=value1; name2=value2'" },
+    "get_cookies": { "type": "boolean", "required": false, "description": "Retrieve all cookies. Default: false" },
+    "fill_form": { "type": "string", "required": false, "description": "Form data to fill: 'selector1=value1; selector2=value2'" },
+    "save_path": { "type": "string", "required": false, "description": "Local file path to save extracted content (HTML or article text)" }
+  },
+  "handler": "browser_automation_persistent"
+}

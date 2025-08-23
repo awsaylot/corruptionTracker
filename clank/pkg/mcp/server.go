@@ -275,6 +275,7 @@ func (s *Server) handleGetEnvVar(varName string) (*mcp.CallToolResult, error) {
 func (s *Server) registerBuiltinTools() {
 	s.registerSystemInfoTool()
 	s.registerResourceTool()
+	s.registerPromptTools()
 }
 
 func (s *Server) registerSystemInfoTool() {
@@ -331,4 +332,31 @@ func (s *Server) registerResourceTool() {
 	}
 
 	s.toolManager.AddTool("resource", tool, handler)
+}
+
+// registerPromptTools registers prompt management tools
+func (s *Server) registerPromptTools() {
+	// Register get_prompts tool
+	getPromptsToolDef := mcp.NewTool("get_prompts",
+		mcp.WithDescription("Get all prompts or a specific prompt by name"),
+		mcp.WithString("name",
+			mcp.Description("Optional prompt name to fetch specific prompt"),
+		),
+	)
+
+	s.toolManager.AddTool("get_prompts", getPromptsToolDef, s.promptManager.HandleGetPromptsRequest)
+
+	// Register execute_prompt tool
+	executePromptToolDef := mcp.NewTool("execute_prompt",
+		mcp.WithDescription("Execute a prompt by name with optional input"),
+		mcp.WithString("name",
+			mcp.Required(),
+			mcp.Description("Name of the prompt to execute"),
+		),
+		mcp.WithString("input",
+			mcp.Description("Input text to process with the prompt"),
+		),
+	)
+
+	s.toolManager.AddTool("execute_prompt", executePromptToolDef, s.promptManager.HandleExecutePromptRequest)
 }

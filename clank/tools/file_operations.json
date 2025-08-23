@@ -1,6 +1,6 @@
 {
   "name": "file_operations",
-  "description": "Essential file operations for fast reads/edits of programming files with minimal token usage",
+  "description": "Essential file operations for fast reads/edits of programming files and PDFs with minimal token usage",
   "arguments": {
     "operation": {
       "type": "string",
@@ -8,7 +8,9 @@
       "description": "The file operation to perform",
       "enum": [
         "read",
-        "write", 
+        "read_lines", 
+        "write",
+        "edit",
         "list",
         "search",
         "diff",
@@ -18,17 +20,17 @@
     "path": {
       "type": "string",
       "required": true,
-      "description": "File or directory path for the operation"
+      "description": "File or directory path for the operation; PDF files are supported for read operations"
     },
     "content": {
       "type": "string",
       "required": false,
-      "description": "Content to write (for write operation)"
+      "description": "Content to write (for write) or replacement content (for edit)"
     },
     "pattern": {
       "type": "string",
       "required": false,
-      "description": "Search pattern or file glob (e.g., '*.go', 'function')"
+      "description": "Search pattern or regex (for search operation)"
     },
     "path2": {
       "type": "string",
@@ -38,7 +40,7 @@
     "options": {
       "type": "string",
       "required": false,
-      "description": "JSON options: {\"recursive\": true, \"ignore_case\": true, \"max_results\": 50, \"file_types\": [\".go\", \".py\"], \"context_lines\": 2}"
+      "description": "Line range for read_lines/edit operations (e.g., '10-20') or JSON options for list/search operations"
     }
   },
   "handler": "file_operations"

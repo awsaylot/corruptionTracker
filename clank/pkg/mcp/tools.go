@@ -115,8 +115,13 @@ func (tm *ToolManager) createDynamicHandler(toolDef DynamicToolDef) func(context
 		switch toolDef.Handler {
 		case "browser_automation":
 			return BrowserAutomationHandler(ctx, request)
+
 		case "file_operations":
 			return FileOperationsHandler(ctx, request)
+		case "get_prompts":
+			return tm.server.promptManager.HandleGetPromptsRequest(ctx, request)
+		case "execute_prompt":
+			return tm.server.promptManager.HandleExecutePromptRequest(ctx, request)
 		default:
 			// Generic fallback: echo parameters
 			params := make(map[string]interface{})

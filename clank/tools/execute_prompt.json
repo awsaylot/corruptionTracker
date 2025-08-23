@@ -1,0 +1,39 @@
+{
+  "name": "execute_prompt",
+  "description": "Execute a prompt by name with optional input. Returns the formatted prompt text ready for use with AI models.",
+  "arguments": {
+    "name": {
+      "type": "string",
+      "required": true,
+      "description": "Name of the prompt to execute. Must match an existing prompt name."
+    },
+    "input": {
+      "type": "string",
+      "required": false,
+      "description": "Optional input text to be processed with the prompt. Will be appended to the prompt text."
+    }
+  },
+  "handler": "execute_prompt",
+  "examples": [
+    {
+      "description": "Execute error_debug prompt without input",
+      "arguments": {
+        "name": "error_debug"
+      }
+    },
+    {
+      "description": "Execute error_debug prompt with specific error details",
+      "arguments": {
+        "name": "error_debug",
+        "input": "Go compilation error: undefined variable 'ctx' on line 42 in main.go"
+      }
+    },
+    {
+      "description": "Execute corruption_investigator prompt with content to analyze",
+      "arguments": {
+        "name": "corruption_investigator",
+        "input": "Recent news article about suspicious government contracts and unusual financial transfers"
+      }
+    }
+  ]
+}
