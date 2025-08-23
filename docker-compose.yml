@@ -1,50 +1,50 @@
 services:
-  # frontend:
-  #   build:
-  #     context: ./frontend
-  #     dockerfile: Dockerfile
-  #   ports:
-  #     - "3000:3000"
-  #   environment:
-  #     - NEXT_PUBLIC_API_URL=http://clank:8080
-  #     - NODE_ENV=development
-  #   volumes:
-  #     - ./frontend:/app
-  #     - /app/node_modules
-  #   command: npm run dev
-  #   depends_on:
-  #     - clank
+#   # frontend:
+#   #   build:
+#   #     context: ./frontend
+#   #     dockerfile: Dockerfile
+#   #   ports:
+#   #     - "3000:3000"
+#   #   environment:
+#   #     - NEXT_PUBLIC_API_URL=http://clank:8080
+#   #     - NODE_ENV=development
+#   #   volumes:
+#   #     - ./frontend:/app
+#   #     - /app/node_modules
+#   #   command: npm run dev
+#   #   depends_on:
+#   #     - clank
 
-  clank:
-    build:
-      context: ./clank
-      dockerfile: Dockerfile
-    ports:
-      - "8080:8080"
-    environment:
-      - NEO4J_URI=bolt://neo4j:7687
-      - NEO4J_USERNAME=neo4j
-      - NEO4J_PASSWORD=your_secure_password
-      - LLM_URL=http://llm:8090
-    volumes:
-      - sandbox_data:/sandbox
-    depends_on:
-      - neo4j
-      - llm
+#   clank:
+#     build:
+#       context: ./clank
+#       dockerfile: Dockerfile
+#     ports:
+#       - "8080:8080"
+#     environment:
+#       - NEO4J_URI=bolt://neo4j:7687
+#       - NEO4J_USERNAME=neo4j
+#       - NEO4J_PASSWORD=your_secure_password
+#       - LLM_URL=http://llm:8090
+#     volumes:
+#       - sandbox_data:/sandbox
+#     depends_on:
+#       - neo4j
+#       - llm
 
-  neo4j:
-    image: neo4j:5.12.0
-    ports:
-      - "7474:7474"  # HTTP
-      - "7687:7687"  # Bolt
-    environment:
-      - NEO4J_AUTH=neo4j/your_secure_password
-      - NEO4J_apoc_export_file_enabled=true
-      - NEO4J_apoc_import_file_enabled=true
-      - NEO4J_dbms_security_procedures_unrestricted=apoc.*
-    volumes:
-      - neo4j_data:/data
-      - neo4j_logs:/logs
+#   neo4j:
+#     image: neo4j:5.12.0
+#     ports:
+#       - "7474:7474"  # HTTP
+#       - "7687:7687"  # Bolt
+#     environment:
+#       - NEO4J_AUTH=neo4j/your_secure_password
+#       - NEO4J_apoc_export_file_enabled=true
+#       - NEO4J_apoc_import_file_enabled=true
+#       - NEO4J_dbms_security_procedures_unrestricted=apoc.*
+#     volumes:
+#       - neo4j_data:/data
+#       - neo4j_logs:/logs
 
   llm:
     image: ghcr.io/ggml-org/llama.cpp:full-cuda
@@ -57,7 +57,7 @@ services:
         target: /models
     command: >
       -s -m /models/CodeLlama-7b-Instruct-hf.Q6_K.gguf 
-      -ngl 20 
+      -ngl 27 
       --port 8090 
       --host 0.0.0.0
     deploy:
@@ -68,7 +68,7 @@ services:
               count: all
               capabilities: [gpu]
 
-volumes:
-  neo4j_data:
-  neo4j_logs:
-  sandbox_data:
+# volumes:
+#   neo4j_data:
+#   neo4j_logs:
+#   sandbox_data:

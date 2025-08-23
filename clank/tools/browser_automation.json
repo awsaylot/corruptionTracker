@@ -1,0 +1,22 @@
+{
+  "name": "browser_automation",
+  "description": "Launches a Firefox browser through Selenium (requires Selenium server and geckodriver on localhost:4444) and navigates to the specified URL. Can optionally extract the full HTML of the page or intelligently extract just the main article text. Supports saving the extracted content to a local file.",
+  "arguments": {
+    "url": {
+      "type": "string",
+      "required": true,
+      "description": "The full URL of the page to navigate to, for example: https://example.com"
+    },
+    "save_path": {
+      "type": "string",
+      "required": false,
+      "description": "Optional local file path where the extracted page content (HTML or article text) should be saved."
+    },
+    "extract_article": {
+      "type": "boolean",
+      "required": false,
+      "description": "If true, the tool will attempt to intelligently extract the main article text from the page, rather than returning the full HTML."
+    }
+  },
+  "handler": "browser_automation"
+}
