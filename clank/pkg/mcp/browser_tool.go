@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -689,16 +690,32 @@ func isPortOpen(host string, port int) bool {
 }
 
 // Helper function to safely get int from request
-// func (req mcp.CallToolRequest) GetInt(key string, defaultValue int) int {
-// 	if val, exists := req.Params.Arguments[key]; exists {
-// 		if intVal, ok := val.(float64); ok {
-// 			return int(intVal)
-// 		}
-// 		if strVal, ok := val.(string); ok {
-// 			if intVal, err := strconv.Atoi(strVal); err == nil {
-// 				return intVal
-// 			}
-// 		}
-// 	}
-// 	return defaultValue
-// }
+func GetInt(req mcp.CallToolRequest, key string, defaultValue int) int {
+	// Assert that Arguments is a map
+	argsMap, ok := req.Params.Arguments.(map[string]interface{})
+	if !ok || argsMap == nil {
+		return defaultValue
+	}
+
+	val, exists := argsMap[key]
+	if !exists || val == nil {
+		return defaultValue
+	}
+
+	switch v := val.(type) {
+	case float64:
+		return int(v)
+	case float32:
+		return int(v)
+	case int:
+		return v
+	case int64:
+		return int(v)
+	case string:
+		if intVal, err := strconv.Atoi(v); err == nil {
+			return intVal
+		}
+	}
+
+	return defaultValue
+}
