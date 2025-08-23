@@ -115,6 +115,8 @@ func (tm *ToolManager) createDynamicHandler(toolDef DynamicToolDef) func(context
 		switch toolDef.Handler {
 		case "browser_automation":
 			return BrowserAutomationHandler(ctx, request)
+		case "file_operations":
+			return FileOperationsHandler(ctx, request)
 		default:
 			// Generic fallback: echo parameters
 			params := make(map[string]interface{})

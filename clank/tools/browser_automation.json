@@ -1,21 +1,116 @@
 {
   "name": "browser_automation",
-  "description": "Launches a Firefox browser through Selenium (requires Selenium server and geckodriver on localhost:4444) and navigates to the specified URL. Can optionally extract the full HTML of the page or intelligently extract just the main article text. Supports saving the extracted content to a local file.",
+  "description": "Enhanced browser automation tool with comprehensive web interaction capabilities. Supports Firefox and Chrome, article extraction, screenshots, form filling, element interaction, JavaScript execution, and much more.",
   "arguments": {
     "url": {
       "type": "string",
       "required": true,
       "description": "The full URL of the page to navigate to, for example: https://example.com"
     },
-    "save_path": {
+    "browser": {
       "type": "string",
       "required": false,
-      "description": "Optional local file path where the extracted page content (HTML or article text) should be saved."
+      "description": "Browser to use: 'firefox' or 'chrome'. Default: 'firefox'"
+    },
+    "headless": {
+      "type": "boolean",
+      "required": false,
+      "description": "Run browser in headless mode. Default: true"
     },
     "extract_article": {
       "type": "boolean",
       "required": false,
-      "description": "If true, the tool will attempt to intelligently extract the main article text from the page, rather than returning the full HTML."
+      "description": "Extract main article text using advanced algorithms including readability scoring. Default: false"
+    },
+    "take_screenshot": {
+      "type": "boolean",
+      "required": false,
+      "description": "Capture a screenshot of the page. Returns base64 encoded image. Default: false"
+    },
+    "user_agent": {
+      "type": "string",
+      "required": false,
+      "description": "Custom user agent string to use for requests"
+    },
+    "window_size": {
+      "type": "string",
+      "required": false,
+      "description": "Browser window size as 'width,height'. Default: '1920,1080'"
+    },
+    "implicit_wait": {
+      "type": "number",
+      "required": false,
+      "description": "Implicit wait timeout in seconds. Default: 10"
+    },
+    "page_load_wait": {
+      "type": "number",
+      "required": false,
+      "description": "Additional time to wait after page load in seconds. Default: 2"
+    },
+    "disable_images": {
+      "type": "boolean",
+      "required": false,
+      "description": "Disable image loading for faster page loads. Default: false"
+    },
+    "disable_css": {
+      "type": "boolean",
+      "required": false,
+      "description": "Disable CSS loading for faster page loads. Default: false"
+    },
+    "proxy_url": {
+      "type": "string",
+      "required": false,
+      "description": "Proxy server URL to use for requests"
+    },
+    "execute_js": {
+      "type": "string",
+      "required": false,
+      "description": "JavaScript code to execute on the page. Result will be included in output"
+    },
+    "wait_for_element": {
+      "type": "string",
+      "required": false,
+      "description": "CSS selector of element to wait for before proceeding. Will timeout after 10 seconds"
+    },
+    "click_element": {
+      "type": "string",
+      "required": false,
+      "description": "CSS selector of element to click"
+    },
+    "type_text": {
+      "type": "string",
+      "required": false,
+      "description": "Text to type into an element (requires type_selector)"
+    },
+    "type_selector": {
+      "type": "string",
+      "required": false,
+      "description": "CSS selector of element to type text into (used with type_text)"
+    },
+    "scroll_to": {
+      "type": "string",
+      "required": false,
+      "description": "Scroll target: 'top', 'bottom', or CSS selector of element to scroll to"
+    },
+    "set_cookies": {
+      "type": "string",
+      "required": false,
+      "description": "Cookies to set before navigation in format 'name1=value1; name2=value2'"
+    },
+    "get_cookies": {
+      "type": "boolean",
+      "required": false,
+      "description": "Retrieve all cookies from the page. Default: false"
+    },
+    "fill_form": {
+      "type": "string",
+      "required": false,
+      "description": "Form data to fill in format 'selector1=value1; selector2=value2'"
+    },
+    "save_path": {
+      "type": "string",
+      "required": false,
+      "description": "Local file path to save the extracted content (HTML or article text)"
     }
   },
   "handler": "browser_automation"

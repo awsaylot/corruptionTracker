@@ -244,76 +244,14 @@ func (s *Server) Serve(ctx context.Context) error {
 	return nil
 }
 
-// --- File operation handlers ---
-
-func (s *Server) handleFileRead(path string) (*mcp.CallToolResult, error) {
-	// Clean and resolve the path for Windows compatibility
-	cleanPath := filepath.Clean(path)
-	content, err := os.ReadFile(cleanPath)
-	if err != nil {
-		return mcp.NewToolResultError(fmt.Sprintf("error reading file: %v", err)), nil
-	}
-	return mcp.NewToolResultText(string(content)), nil
-}
-
-func (s *Server) handleFileWrite(path, content string) (*mcp.CallToolResult, error) {
-	// Clean and resolve the path for Windows compatibility
-	cleanPath := filepath.Clean(path)
-	
-	// Ensure the directory exists before writing the file
-	dir := filepath.Dir(cleanPath)
-	if err := os.MkdirAll(dir, 0755); err != nil {
-		return mcp.NewToolResultError(fmt.Sprintf("error creating directory %s: %v", dir, err)), nil
-	}
-	
-	err := os.WriteFile(cleanPath, []byte(content), 0644)
-	if err != nil {
-		return mcp.NewToolResultError(fmt.Sprintf("error writing file: %v", err)), nil
-	}
-	return mcp.NewToolResultText(fmt.Sprintf("Successfully wrote to %s", cleanPath)), nil
-}
-
-func (s *Server) handleDirectoryList(path string) (*mcp.CallToolResult, error) {
-	// Clean and resolve the path for Windows compatibility
-	cleanPath := filepath.Clean(path)
-	entries, err := os.ReadDir(cleanPath)
-	if err != nil {
-		return mcp.NewToolResultError(fmt.Sprintf("error listing directory: %v", err)), nil
-	}
-
-	var result string
-	for _, entry := range entries {
-		if entry.IsDir() {
-			result += fmt.Sprintf("[DIR]  %s\n", entry.Name())
-		} else {
-			result += fmt.Sprintf("[FILE] %s\n", entry.Name())
-		}
-	}
-
-	return mcp.NewToolResultText(fmt.Sprintf("Contents of %s:\n%s", cleanPath, result)), nil
-}
-
-func (s *Server) handleDirectoryCreate(path string) (*mcp.CallToolResult, error) {
-	// Clean and resolve the path for Windows compatibility
-	cleanPath := filepath.Clean(path)
-	
-	// Create the directory with all necessary parent directories
-	err := os.MkdirAll(cleanPath, 0755)
-	if err != nil {
-		return mcp.NewToolResultError(fmt.Sprintf("error creating directory: %v", err)), nil
-	}
-	
-	return mcp.NewToolResultText(fmt.Sprintf("Successfully created directory: %s", cleanPath)), nil
-}
+// --- System info handlers ---
 
 func (s *Server) handleGetCWD() (*mcp.CallToolResult, error) {
 	cwd, err := os.Getwd()
 	if err != nil {
 		return mcp.NewToolResultError(fmt.Sprintf("error getting current directory: %v", err)), nil
 	}
-	// Use filepath.Clean to ensure Windows-style path separators
-	cleanPath := filepath.Clean(cwd)
-	return mcp.NewToolResultText(fmt.Sprintf("Current directory: %s", cleanPath)), nil
+	return mcp.NewToolResultText(fmt.Sprintf("Current directory: %s", filepath.Clean(cwd))), nil
 }
 
 func (s *Server) handleGetTime() (*mcp.CallToolResult, error) {
@@ -325,64 +263,18 @@ func (s *Server) handleGetEnvVar(varName string) (*mcp.CallToolResult, error) {
 	if varName == "" {
 		return mcp.NewToolResultError("environment variable name required"), nil
 	}
-
 	value := os.Getenv(varName)
 	if value == "" {
 		return mcp.NewToolResultText(fmt.Sprintf("Environment variable %s not set", varName)), nil
 	}
-
 	return mcp.NewToolResultText(fmt.Sprintf("%s=%s", varName, value)), nil
 }
 
+// --- Tool registration ---
+
 func (s *Server) registerBuiltinTools() {
-	s.registerFileOperationsTool()
 	s.registerSystemInfoTool()
 	s.registerResourceTool()
-}
-
-func (s *Server) registerFileOperationsTool() {
-	tool := mcp.NewTool("file_operations",
-		mcp.WithDescription("Read, write, list files, and create directories on the system"),
-		mcp.WithString("operation",
-			mcp.Required(),
-			mcp.Description("The file operation to perform: read, write, list, or mkdir"),
-		),
-		mcp.WithString("path",
-			mcp.Required(),
-			mcp.Description("File or directory path"),
-		),
-		mcp.WithString("content",
-			mcp.Description("Content to write (only for write operations)"),
-		),
-	)
-
-	handler := func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		operation, err := request.RequireString("operation")
-		if err != nil {
-			return mcp.NewToolResultError("operation must be a string"), nil
-		}
-
-		path, err := request.RequireString("path")
-		if err != nil {
-			return mcp.NewToolResultError("path must be a string"), nil
-		}
-
-		switch operation {
-		case "read":
-			return s.handleFileRead(path)
-		case "write":
-			content := request.GetString("content", "")
-			return s.handleFileWrite(path, content)
-		case "list":
-			return s.handleDirectoryList(path)
-		case "mkdir":
-			return s.handleDirectoryCreate(path)
-		default:
-			return mcp.NewToolResultError("invalid operation. Use: read, write, list, or mkdir"), nil
-		}
-	}
-
-	s.toolManager.AddTool("file_operations", tool, handler)
 }
 
 func (s *Server) registerSystemInfoTool() {
@@ -434,7 +326,6 @@ func (s *Server) registerResourceTool() {
 		if !ok {
 			return mcp.NewToolResultError(fmt.Sprintf("resource %s not found", name)), nil
 		}
-
 		bytes, _ := json.MarshalIndent(res, "", "  ")
 		return mcp.NewToolResultText(string(bytes)), nil
 	}

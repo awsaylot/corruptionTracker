@@ -1,0 +1,45 @@
+{
+  "name": "file_operations",
+  "description": "Essential file operations for fast reads/edits of programming files with minimal token usage",
+  "arguments": {
+    "operation": {
+      "type": "string",
+      "required": true,
+      "description": "The file operation to perform",
+      "enum": [
+        "read",
+        "write", 
+        "list",
+        "search",
+        "diff",
+        "mkdir"
+      ]
+    },
+    "path": {
+      "type": "string",
+      "required": true,
+      "description": "File or directory path for the operation"
+    },
+    "content": {
+      "type": "string",
+      "required": false,
+      "description": "Content to write (for write operation)"
+    },
+    "pattern": {
+      "type": "string",
+      "required": false,
+      "description": "Search pattern or file glob (e.g., '*.go', 'function')"
+    },
+    "path2": {
+      "type": "string",
+      "required": false,
+      "description": "Second file path (for diff operation)"
+    },
+    "options": {
+      "type": "string",
+      "required": false,
+      "description": "JSON options: {\"recursive\": true, \"ignore_case\": true, \"max_results\": 50, \"file_types\": [\".go\", \".py\"], \"context_lines\": 2}"
+    }
+  },
+  "handler": "file_operations"
+}
