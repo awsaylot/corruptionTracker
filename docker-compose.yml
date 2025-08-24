@@ -68,6 +68,32 @@ services:
               count: all
               capabilities: [gpu]
 
+
+
+#mistral llm
+    #             llm:
+    # image: ghcr.io/ggml-org/llama.cpp:full-cuda
+    # runtime: nvidia
+    # ports:
+    #   - "8090:8090"
+    # volumes:
+    #   - type: bind
+    #     source: ${PWD}/models
+    #     target: /models
+    # command: >
+    #   -s -m /models/Mistral-7B-v0.3.Q6_K.gguf 
+    #   -ngl 27 
+    #   --port 8090 
+    #   --host 0.0.0.0
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: all
+    #           capabilities: [gpu]
+
+
 # volumes:
 #   neo4j_data:
 #   neo4j_logs:
